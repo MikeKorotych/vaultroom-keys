@@ -28,6 +28,8 @@ import {
   Lock,
   LoaderCircle,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
   ShieldCheck,
@@ -82,7 +84,15 @@ export function KeysVaultApp() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [cloudRevision, setCloudRevision] = useState(0);
   const [syncState, setSyncState] = useState<SyncState>("loading");
+  const [railCompact, setRailCompact] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setRailCompact(window.localStorage.getItem("vaultroom-rail-compact") === "true");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -346,18 +356,29 @@ export function KeysVaultApp() {
   }
 
   return (
-    <main className="keysApp" data-sync={syncState}>
+    <main className="keysApp" data-sync={syncState} data-rail-compact={railCompact}>
       <div className="keysAmbient" aria-hidden="true"><i /><i /><span>01001011</span><span>AEAD</span></div>
-      <aside className="keysRail">
+      <aside className="keysRail" data-compact={railCompact}>
         <div className="keysBrand"><KeyRound /> <span>VAULTROOM<br />KEYS</span></div>
+        <button
+          className="keysRailToggle"
+          aria-label={railCompact ? "Expand sidebar" : "Collapse sidebar"}
+          title={railCompact ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => setRailCompact((current) => {
+            window.localStorage.setItem("vaultroom-rail-compact", String(!current));
+            return !current;
+          })}
+        >
+          {railCompact ? <PanelLeftOpen /> : <PanelLeftClose />}
+        </button>
         <div className="keysStatus"><i /><span><strong>UNLOCKED</strong><small>Plaintext is in memory</small></span></div>
         <nav>
-          <button data-active="true"><FileKey2 /> All secrets <span>{payload?.items.length ?? 0}</span></button>
-          {environments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(filter === environment ? "all" : environment)}><span className={`envDot ${environment}`} /> {environment}<span>{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
+          <button data-active={filter === "all"} onClick={() => setFilter("all")} title="All secrets"><FileKey2 /><span className="railLabelText">All secrets</span><span className="railCount">{payload?.items.length ?? 0}</span></button>
+          {environments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(environment)} title={environment}><span className={`envDot ${environment}`} /><span className="railLabelText">{environment}</span><span className="railCount">{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
         </nav>
         <section className="keysSafety" data-state={syncState} aria-live="polite">{syncState === "saving" ? <LoaderCircle className="syncSpinner" /> : syncState === "offline" || syncState === "conflict" ? <CloudOff /> : <ShieldCheck />}<p><strong>{syncState === "synced" ? "Encrypted backup current" : syncState === "saving" ? "Uploading ciphertext" : syncState === "conflict" ? "Sync conflict" : syncState === "offline" ? "Cloud unavailable" : "Saved on this device"}</strong><small>Sequence {payload?.sequence ?? 0} · cloud rev {cloudRevision}</small></p></section>
         <SecurityExplainer placement="rail" />
-        <footer><UserButton /><button onClick={() => void lock()}><Lock /> Lock vault</button></footer>
+        <footer><UserButton /><button onClick={() => void lock()} title="Lock vault"><Lock /><span>Lock vault</span></button></footer>
       </aside>
 
       <section className="keysWorkspace">
@@ -367,7 +388,7 @@ export function KeysVaultApp() {
           <input ref={importRef} hidden type="file" accept=".vaultroom,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); event.target.value = ""; }} />
         </header>
 
-        <div className="keysHero"><p className="keysKicker">LOCAL DECRYPTED VIEW</p><h1>Developer<br />secrets.</h1><div><span>{payload?.items.length ?? 0}<small>items</small></span><span>{payload?.items.filter((item) => item.environment === "production").length ?? 0}<small>production</small></span></div></div>
+        <div className="keysHero"><p className="keysKicker">LOCAL DECRYPTED VIEW</p><h1>Secrets.</h1><div><span>{payload?.items.length ?? 0}<small>items</small></span><span>{payload?.items.filter((item) => item.environment === "production").length ?? 0}<small>production</small></span></div></div>
 
         <div className="keysList">
           <header><span>Service / label</span><span>Environment</span><span>Expiry</span><span>Secret</span><span /></header>

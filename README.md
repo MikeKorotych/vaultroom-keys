@@ -80,4 +80,4 @@ The monochrome dots/plasma background is a web-native Canvas interpretation insp
 
 ## AI use
 
-Codex was used for implementation, refactoring, test generation, UI iterations, documentation and browser QA. I defined the product pivot, scope, trust model and release decisions, then reviewed the generated changes and verified the working flows. The cryptographic design still needs an independent human security review before the project should hold high-value credentials.
+Codex was used for implementation, refactoring, test generation, UI iterations, documentation and browser QA. I defined the product pivot, scope, UI/UX, then reviewed the generated changes and verified the working flows.
