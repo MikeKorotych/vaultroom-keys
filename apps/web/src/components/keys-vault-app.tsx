@@ -392,7 +392,7 @@ export function KeysVaultApp() {
           <input ref={importRef} hidden type="file" accept=".vaultroom,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); event.target.value = ""; }} />
         </header>
 
-        <div className="keysHero"><p className="keysKicker">LOCAL DECRYPTED VIEW</p><h1>Secrets.</h1><div><span>{payload?.items.length ?? 0}<small>items</small></span><span>{payload?.items.filter((item) => item.environment === "production").length ?? 0}<small>production</small></span></div></div>
+        <div className="keysHero"><p className="keysKicker">LOCAL DECRYPTED VIEW</p><section className="keysHeroTitle"><h1>Secrets</h1><small>FILTER / {filter === "all" ? "ALL SECRETS" : filter.toUpperCase()}</small></section><div><span>{payload?.items.length ?? 0}<small>items</small></span><span>{payload?.items.filter((item) => item.environment === "production").length ?? 0}<small>production</small></span></div></div>
 
         <div className="keysList">
           <header><span>Service / label</span><span>Environment</span><span>Expiry</span><span>Secret</span><span /></header>
