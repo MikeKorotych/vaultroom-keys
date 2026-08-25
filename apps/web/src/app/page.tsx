@@ -13,7 +13,7 @@ export default function Home() {
           <div className="signInMark"><KeyRound /> VAULTROOM KEYS / OPEN SOURCE BETA</div>
           <section>
             <p className="eyebrow">CLIENT-ENCRYPTED DEVELOPER VAULT</p>
-            <h1>Your keys.<br />Unreadable to us.</h1>
+            <h1><span>Your keys.</span><span>Unreadable to us.</span></h1>
             <p>Back up API keys and recovery codes. Encryption happens on this device before anything is stored.</p>
             <div className="signInActions">
               <SignInButton mode="modal"><button className="signInPrimary">Open private vault</button></SignInButton>
