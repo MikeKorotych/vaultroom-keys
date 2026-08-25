@@ -6,6 +6,7 @@
 - Added a local Canvas dots/plasma background with reduced-motion support and no third-party runtime dependency.
 - Matched the unlocked sidebar to the monochrome theme and added a persistent compact mode.
 - Made the active environment filter explicit and shortened the workspace title to `Secrets`.
+- Scoped local IndexedDB ciphertext to the authenticated Clerk user instead of sharing one browser-wide record.
 - Added an MIT license, contribution guide and responsible disclosure policy.
 - Documented the public product pivot and the current security limits.
 

@@ -68,7 +68,7 @@ function downloadText(name: string, text: string, type = "text/plain") {
 }
 
 export function KeysVaultApp() {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const [phase, setPhase] = useState<Phase>("loading");
   const [envelope, setEnvelope] = useState<VaultEnvelope | null>(null);
   const [payload, setPayload] = useState<VaultPayload | null>(null);
@@ -95,22 +95,23 @@ export function KeysVaultApp() {
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
     let cancelled = false;
     void (async () => {
       try {
-        const local = await loadLocalVault();
+        const local = await loadLocalVault(userId);
         const remote = await apiRequest<CloudVaultResponse>(getToken, "/vault");
         if (cancelled) return;
         const useRemote = remote.vault && (!local || remote.vault.revision > local.cloudRevision);
         const selectedEnvelope = useRemote ? remote.vault!.envelope : local?.envelope ?? null;
         const selectedRevision = useRemote ? remote.vault!.revision : local?.cloudRevision ?? 0;
-        if (useRemote) await saveLocalVault({ envelope: selectedEnvelope!, cloudRevision: selectedRevision });
+        if (useRemote) await saveLocalVault(userId, { envelope: selectedEnvelope!, cloudRevision: selectedRevision });
         setEnvelope(selectedEnvelope);
         setCloudRevision(selectedRevision);
         setSyncState(remote.vault || local ? "synced" : "local");
         setPhase(selectedEnvelope ? "locked" : "setup");
       } catch (nextError) {
-        const local = await loadLocalVault().catch(() => null);
+        const local = await loadLocalVault(userId).catch(() => null);
         if (cancelled) return;
         setEnvelope(local?.envelope ?? null);
         setCloudRevision(local?.cloudRevision ?? 0);
@@ -120,7 +121,7 @@ export function KeysVaultApp() {
       }
     })();
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, userId]);
 
   useEffect(() => {
     if (phase !== "unlocked" || !vaultKey) return;
@@ -161,6 +162,7 @@ export function KeysVaultApp() {
   }
 
   async function pushCloud(nextEnvelope: VaultEnvelope, expectedRevision: number) {
+    if (!userId) return;
     setSyncState("saving");
     try {
       const response = await apiRequest<CloudVaultResponse>(getToken, "/vault", {
@@ -169,7 +171,7 @@ export function KeysVaultApp() {
       });
       const revision = response.vault?.revision ?? expectedRevision;
       setCloudRevision(revision);
-      await saveLocalVault({ envelope: nextEnvelope, cloudRevision: revision });
+      await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision: revision });
       setSyncState("synced");
       setError("");
     } catch (nextError) {
@@ -181,6 +183,7 @@ export function KeysVaultApp() {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!userId) return;
     const form = event.currentTarget;
     setError("");
     const data = new FormData(form);
@@ -192,7 +195,7 @@ export function KeysVaultApp() {
     setBusy(true);
     try {
       const created = await createVault(passphrase);
-      await saveLocalVault({ envelope: created.envelope, cloudRevision: 0 });
+      await saveLocalVault(userId, { envelope: created.envelope, cloudRevision: 0 });
       setEnvelope(created.envelope);
       setPayload(created.payload);
       setVaultKey(created.vaultKey);
@@ -229,7 +232,7 @@ export function KeysVaultApp() {
 
   async function recover(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!envelope) return;
+    if (!envelope || !userId) return;
     const form = event.currentTarget;
     setError("");
     setBusy(true);
@@ -241,7 +244,7 @@ export function KeysVaultApp() {
       }
       const recovered = await recoverVault(envelope, String(data.get("recoveryKey") ?? ""));
       const nextEnvelope = await changePassphrase(recovered, newPassphrase);
-      await saveLocalVault({ envelope: nextEnvelope, cloudRevision });
+      await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision });
       setEnvelope(nextEnvelope);
       setPayload(recovered.payload);
       setVaultKey(recovered.vaultKey);
@@ -256,10 +259,10 @@ export function KeysVaultApp() {
   }
 
   async function persistItems(items: VaultItem[]) {
-    if (!envelope || !vaultKey || !payload) return;
+    if (!envelope || !vaultKey || !payload || !userId) return;
     const nextPayload: VaultPayload = { version: 1, sequence: payload.sequence + 1, items };
     const nextEnvelope = await encryptVaultPayload(envelope, vaultKey, nextPayload);
-    await saveLocalVault({ envelope: nextEnvelope, cloudRevision });
+    await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision });
     setPayload(nextPayload);
     setEnvelope(nextEnvelope);
     void pushCloud(nextEnvelope, cloudRevision);
@@ -309,11 +312,12 @@ export function KeysVaultApp() {
   }
 
   async function importVault(file: File) {
+    if (!userId) return;
     setError("");
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error("Backup is too large");
       const imported = await validateVaultEnvelope(JSON.parse(await file.text()));
-      await saveLocalVault({ envelope: imported, cloudRevision });
+      await saveLocalVault(userId, { envelope: imported, cloudRevision });
       if (vaultKey) await destroyVaultKey(vaultKey);
       setEnvelope(imported);
       setVaultKey(null);
