@@ -1,5 +1,5 @@
 {
-  "name": "acme-data-room",
+  "name": "vaultroom-keys",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -7,6 +7,7 @@
     "build": "pnpm --filter ./apps/api build && pnpm --filter ./apps/web build",
     "lint": "pnpm --recursive lint",
     "test": "pnpm --recursive test",
-    "typecheck": "pnpm --recursive typecheck"
+    "typecheck": "pnpm --recursive typecheck",
+    "plan": "open docs/plan.html"
   }
 }
