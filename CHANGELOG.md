@@ -7,6 +7,7 @@
 - Matched the unlocked sidebar to the monochrome theme and added a persistent compact mode.
 - Made the active environment filter explicit and shortened the workspace title to `Secrets`.
 - Scoped local IndexedDB ciphertext to the authenticated Clerk user instead of sharing one browser-wide record.
+- Added fluid hero, toolbar and secret-row layouts for tablet, narrow desktop and mobile widths.
 - Added an MIT license, contribution guide and responsible disclosure policy.
 - Documented the public product pivot and the current security limits.
 
