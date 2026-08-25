@@ -23,23 +23,23 @@ Clerk authenticates the account, but it does not decrypt the vault. The API stor
 
 The biggest limitation of a web zero-knowledge vault is still the delivered JavaScript: a compromised deployment can capture plaintext after unlock. Phase 1 therefore removes third-party scripts from the vault surface, adds a strict Content Security Policy and pins the crypto implementation. A signed desktop client is the stronger long-term trust boundary.
 
-## Architecture target
+## How it works
 
-```text
-master passphrase
-      |
-      v
-memory-hard KDF + random salt
-      |
-      v
-key-encryption key ---- unwraps ---- random vault data key
-                                      |
-                                      v
-                              encrypts vault payload
-                                      |
-                                      v
-browser / IndexedDB -> ciphertext -> Nest API -> PostgreSQL / object storage
+```mermaid
+flowchart LR
+    A[Master passphrase<br/>stays in the browser] --> B[Argon2id derives<br/>a temporary unlock key]
+    B --> C[Unlock random<br/>vault data key]
+    C --> D[XChaCha20-Poly1305<br/>encrypts the whole vault]
+    D --> E[Ciphertext + revision]
+    E --> F[Nest API + PostgreSQL]
+    F --> G[Another device downloads<br/>the same ciphertext]
+    G --> C
+    R[One-time recovery key<br/>stored by the user] -. second way to unlock .-> C
 ```
+
+In plain language: the browser locks the box before it uses the network. The API can see the Clerk account ID, encrypted blob size, revision and update time. It cannot see secret values, notes, service names, environments, master passphrase or recovery key.
+
+This protects a database leak and a stolen encrypted export. It does not protect an already unlocked device, malware, or a malicious future web build. The product shows the same diagram and limitation from the sign-in screen and unlocked sidebar.
 
 Format v1 uses Argon2id and XChaCha20-Poly1305 through libsodium. The encrypted envelope stores its KDF parameters, salts, nonces and format version so future clients can reject unsupported or unsafe input.
 

@@ -18,6 +18,7 @@ import {
   Check,
   Clipboard,
   Clock3,
+  CloudOff,
   Download,
   Eye,
   EyeOff,
@@ -25,6 +26,7 @@ import {
   Fingerprint,
   KeyRound,
   Lock,
+  LoaderCircle,
   MoreHorizontal,
   Plus,
   Search,
@@ -36,6 +38,7 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { loadLocalVault, saveLocalVault } from "@/lib/vault-storage";
+import { SecurityExplainer } from "@/components/security-explainer";
 
 type Phase = "loading" | "setup" | "recovery" | "locked" | "unlocked";
 type EditorState = VaultItem | "new" | null;
@@ -258,13 +261,11 @@ export function KeysVaultApp() {
       ? items.map((candidate) => (candidate.id === item.id ? item : candidate))
       : [...items, item];
     await persistItems(next);
-    setEditor(null);
   }
 
   async function deleteItem(item: VaultItem) {
     if (!window.confirm(`Delete ${item.service} / ${item.label}?`)) return;
     await persistItems((payload?.items ?? []).filter((candidate) => candidate.id !== item.id));
-    setEditor(null);
   }
 
   function reveal(itemId: string) {
@@ -314,7 +315,7 @@ export function KeysVaultApp() {
   }
 
   if (phase === "loading") {
-    return <main className="keysGate"><Fingerprint className="keysPulse" /><p>Reading encrypted storage</p></main>;
+    return <main className="keysGate keysLoading"><div className="keysLoader" aria-hidden="true"><i /><Fingerprint /><span /></div><p>Reading encrypted storage</p><small>LOCAL CIPHERTEXT · CLOUD REVISION</small></main>;
   }
 
   if (phase === "setup") {
@@ -345,7 +346,8 @@ export function KeysVaultApp() {
   }
 
   return (
-    <main className="keysApp">
+    <main className="keysApp" data-sync={syncState}>
+      <div className="keysAmbient" aria-hidden="true"><i /><i /><span>01001011</span><span>AEAD</span></div>
       <aside className="keysRail">
         <div className="keysBrand"><KeyRound /> <span>VAULTROOM<br />KEYS</span></div>
         <div className="keysStatus"><i /><span><strong>UNLOCKED</strong><small>Plaintext is in memory</small></span></div>
@@ -353,7 +355,8 @@ export function KeysVaultApp() {
           <button data-active="true"><FileKey2 /> All secrets <span>{payload?.items.length ?? 0}</span></button>
           {environments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(filter === environment ? "all" : environment)}><span className={`envDot ${environment}`} /> {environment}<span>{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
         </nav>
-        <section className="keysSafety"><ShieldCheck /><p><strong>{syncState === "synced" ? "Encrypted backup current" : syncState === "saving" ? "Uploading ciphertext" : syncState === "conflict" ? "Sync conflict" : "Saved on this device"}</strong><small>Sequence {payload?.sequence ?? 0} · cloud rev {cloudRevision}</small></p></section>
+        <section className="keysSafety" data-state={syncState} aria-live="polite">{syncState === "saving" ? <LoaderCircle className="syncSpinner" /> : syncState === "offline" || syncState === "conflict" ? <CloudOff /> : <ShieldCheck />}<p><strong>{syncState === "synced" ? "Encrypted backup current" : syncState === "saving" ? "Uploading ciphertext" : syncState === "conflict" ? "Sync conflict" : syncState === "offline" ? "Cloud unavailable" : "Saved on this device"}</strong><small>Sequence {payload?.sequence ?? 0} · cloud rev {cloudRevision}</small></p></section>
+        <SecurityExplainer placement="rail" />
         <footer><UserButton /><button onClick={() => void lock()}><Lock /> Lock vault</button></footer>
       </aside>
 
@@ -368,18 +371,19 @@ export function KeysVaultApp() {
 
         <div className="keysList">
           <header><span>Service / label</span><span>Environment</span><span>Expiry</span><span>Secret</span><span /></header>
-          {visibleItems.map((item) => (
-            <article key={item.id}>
+          {visibleItems.map((item, index) => (
+            <article key={item.id} style={{ animationDelay: `${Math.min(index, 10) * 35}ms` }}>
               <span className="keyIdentity"><i>{item.service.slice(0, 2).toUpperCase()}</i><span><strong>{item.service}</strong><small>{item.label}</small></span></span>
               <span><b className={`envBadge ${item.environment}`}>{item.environment}</b></span>
               <span className={item.expiresAt && new Date(item.expiresAt) < new Date() ? "expired" : ""}><Clock3 /> {formatDate(item.expiresAt)}</span>
-              <span className="secretCell"><code>{revealed.has(item.id) ? item.secret : "••••••••••••••••••••"}</code><button onClick={() => revealed.has(item.id) ? setRevealed((current) => new Set([...current].filter((id) => id !== item.id))) : reveal(item.id)}>{revealed.has(item.id) ? <EyeOff /> : <Eye />}</button><button onClick={() => void copySecret(item)}>{copiedId === item.id ? <Check /> : <Clipboard />}</button></span>
-              <button className="keyMore" onClick={() => setEditor(item)}><MoreHorizontal /></button>
+              <span className="secretCell" data-copied={copiedId === item.id}><code>{revealed.has(item.id) ? item.secret : "••••••••••••••••••••"}</code><button aria-label={revealed.has(item.id) ? `Hide ${item.service} secret` : `Reveal ${item.service} secret`} onClick={() => revealed.has(item.id) ? setRevealed((current) => new Set([...current].filter((id) => id !== item.id))) : reveal(item.id)}>{revealed.has(item.id) ? <EyeOff /> : <Eye />}</button><button aria-label={`Copy ${item.service} secret`} onClick={() => void copySecret(item)}>{copiedId === item.id ? <Check /> : <Clipboard />}</button></span>
+              <button className="keyMore" aria-label={`Edit ${item.service}`} onClick={() => setEditor(item)}><MoreHorizontal /></button>
             </article>
           ))}
           {!visibleItems.length && <section className="keysEmpty"><KeyRound /><h2>{payload?.items.length ? "No matching secrets." : "The vault is empty."}</h2><p>{payload?.items.length ? "Change the search or environment filter." : "Add your first API key. It will be encrypted before it leaves memory."}</p><button onClick={() => setEditor("new")}><Plus /> Add first secret</button></section>}
         </div>
         {error && <div className="keysError">{error}</div>}
+        {copiedId && <div className="keysToast" role="status"><Check /> Copied. Clipboard clears in 30 seconds.</div>}
       </section>
 
       {editor && <ItemEditor item={editor === "new" ? null : editor} onClose={() => setEditor(null)} onSave={saveItem} onDelete={deleteItem} />}
@@ -398,6 +402,14 @@ function LockedScreen({ envelope, busy, error, onUnlock, onRecover, onImport, im
 
 function ItemEditor({ item, onClose, onSave, onDelete }: { item: VaultItem | null; onClose: () => void; onSave: (item: VaultItem) => Promise<void>; onDelete: (item: VaultItem) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  function requestClose() {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 150);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -405,6 +417,13 @@ function ItemEditor({ item, onClose, onSave, onDelete }: { item: VaultItem | nul
     const now = new Date().toISOString();
     await onSave({ id: item?.id ?? crypto.randomUUID(), service: String(data.get("service")), label: String(data.get("label")), environment: String(data.get("environment")) as VaultEnvironment, secret: String(data.get("secret")), notes: String(data.get("notes")), expiresAt: String(data.get("expiresAt") || "") || null, createdAt: item?.createdAt ?? now, updatedAt: now });
     setSaving(false);
+    requestClose();
   }
-  return <div className="keyModalBackdrop" onMouseDown={onClose}><form className="keyModal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="keyModalClose" onClick={onClose}><X /></button><p className="keysKicker">{item ? "EDIT SECRET" : "NEW SECRET"}</p><h2>{item ? item.service : "Add a key."}</h2><div className="keyFormGrid"><label>Service<input name="service" defaultValue={item?.service} required autoFocus placeholder="OpenRouter" /></label><label>Label<input name="label" defaultValue={item?.label} required placeholder="Personal account" /></label><label>Environment<select name="environment" defaultValue={item?.environment ?? "development"}>{environments.map((environment) => <option key={environment}>{environment}</option>)}</select></label><label>Expires<input name="expiresAt" type="date" defaultValue={item?.expiresAt?.slice(0, 10)} /></label><label className="keyFormFull">Secret value<textarea name="secret" defaultValue={item?.secret} required spellCheck={false} /></label><label className="keyFormFull">Notes<textarea name="notes" defaultValue={item?.notes} /></label></div><footer>{item ? <button type="button" className="keyDelete" onClick={() => void onDelete(item)}><Trash2 /> Delete</button> : <span />}<div><button type="button" onClick={onClose}>Cancel</button><button className="keysPrimary" disabled={saving}><ShieldCheck /> {saving ? "Encrypting…" : "Encrypt and save"}</button></div></footer></form></div>;
+  async function remove() {
+    if (!item) return;
+    await onDelete(item);
+    requestClose();
+  }
+
+  return <div className="keyModalBackdrop" data-closing={closing} onMouseDown={requestClose}><form className="keyModal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="keyModalClose" aria-label="Close secret editor" onClick={requestClose}><X /></button><p className="keysKicker">{item ? "EDIT SECRET" : "NEW SECRET"}</p><h2>{item ? item.service : "Add a key."}</h2><div className="keyFormGrid"><label>Service<input name="service" defaultValue={item?.service} required autoFocus placeholder="OpenRouter" /></label><label>Label<input name="label" defaultValue={item?.label} required placeholder="Personal account" /></label><label>Environment<select name="environment" defaultValue={item?.environment ?? "development"}>{environments.map((environment) => <option key={environment}>{environment}</option>)}</select></label><label>Expires<input name="expiresAt" type="date" defaultValue={item?.expiresAt?.slice(0, 10)} /></label><label className="keyFormFull">Secret value<textarea name="secret" defaultValue={item?.secret} required spellCheck={false} /></label><label className="keyFormFull">Notes<textarea name="notes" defaultValue={item?.notes} /></label></div><footer>{item ? <button type="button" className="keyDelete" onClick={() => void remove()}><Trash2 /> Delete</button> : <span />}<div><button type="button" onClick={requestClose}>Cancel</button><button className="keysPrimary" disabled={saving}><ShieldCheck /> {saving ? "Encrypting…" : "Encrypt and save"}</button></div></footer></form></div>;
 }
