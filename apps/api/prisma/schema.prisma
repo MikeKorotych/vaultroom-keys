@@ -128,3 +128,27 @@ model AuditEvent {
   @@index([dataRoomId, createdAt])
   @@index([action, createdAt])
 }
+
+model EncryptedVault {
+  id        String          @id @default(cuid())
+  ownerId   String          @unique
+  revision  Int             @default(1)
+  envelope  Json
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  history   VaultRevision[]
+
+  @@index([updatedAt])
+}
+
+model VaultRevision {
+  id        String         @id @default(cuid())
+  vaultId   String
+  revision  Int
+  envelope  Json
+  createdAt DateTime       @default(now())
+  vault     EncryptedVault @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+
+  @@unique([vaultId, revision])
+  @@index([vaultId, createdAt])
+}

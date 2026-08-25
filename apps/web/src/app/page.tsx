@@ -1,23 +1,23 @@
 import { Show, SignInButton } from "@clerk/nextjs";
-import { ShieldCheck } from "lucide-react";
-import { DataRoomApp } from "@/components/data-room-app";
+import { KeyRound } from "lucide-react";
+import { KeysVaultApp } from "@/components/keys-vault-app";
 
 export default function Home() {
   return (
     <>
       <Show when="signed-out">
         <main className="signInPage">
-          <div className="signInMark"><ShieldCheck /> VAULTROOM / 01</div>
+          <div className="signInMark"><KeyRound /> VAULTROOM KEYS / PRIVATE BETA</div>
           <section>
-            <p className="eyebrow">PRIVATE DUE DILIGENCE</p>
-            <h1>Order creates<br />confidence.</h1>
-            <p>Secure document exchange for teams making consequential decisions.</p>
-            <SignInButton mode="modal"><button>Enter secure room</button></SignInButton>
+            <p className="eyebrow">CLIENT-ENCRYPTED DEVELOPER VAULT</p>
+            <h1>Your keys.<br />Unreadable to us.</h1>
+            <p>Back up API keys and recovery codes. Encryption happens on this device before anything is stored.</p>
+            <SignInButton mode="modal"><button>Open private vault</button></SignInButton>
           </section>
-          <footer>256-bit encryption · access logging · revocable sharing</footer>
+          <footer>ARGON2ID · XCHACHA20-POLY1305 · NO PASSWORD RESET</footer>
         </main>
       </Show>
-      <Show when="signed-in"><DataRoomApp /></Show>
+      <Show when="signed-in"><KeysVaultApp /></Show>
     </>
   );
 }

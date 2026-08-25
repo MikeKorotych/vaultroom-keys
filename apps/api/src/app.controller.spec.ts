@@ -17,9 +17,9 @@ describe('AppController', () => {
   describe('root', () => {
     it('describes the deployed service', () => {
       expect(appController.getServiceInfo()).toEqual({
-        service: 'Vaultroom API',
+        service: 'Vaultroom Keys API',
         status: 'ok',
-        frontend: 'https://vaultroom-ruby.vercel.app',
+        frontend: 'https://vaultroom-keys.vercel.app',
         health: '/health',
       });
     });

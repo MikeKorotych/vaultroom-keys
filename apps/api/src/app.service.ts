@@ -4,9 +4,9 @@ import { Injectable } from '@nestjs/common';
 export class AppService {
   getServiceInfo() {
     return {
-      service: 'Vaultroom API',
+      service: 'Vaultroom Keys API',
       status: 'ok',
-      frontend: 'https://vaultroom-ruby.vercel.app',
+      frontend: 'https://vaultroom-keys.vercel.app',
       health: '/health',
     };
   }

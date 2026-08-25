@@ -3,15 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
-import { RoomsModule } from './rooms/rooms.module';
-import { StorageModule } from './storage/storage.module';
+import { VaultModule } from './vault/vault.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
-    StorageModule,
-    RoomsModule,
+    VaultModule,
   ],
   controllers: [AppController],
   providers: [AppService],

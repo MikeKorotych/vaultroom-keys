@@ -3,10 +3,11 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "@fontsource-variable/manrope";
 import "@fontsource-variable/newsreader";
 import "./globals.css";
+import "./keys.css";
 
 export const metadata: Metadata = {
-  title: "Vaultroom · Secure due diligence",
-  description: "A secure data room for confidential document review.",
+  title: "Vaultroom Keys · Encrypted developer vault",
+  description: "A client-encrypted backup vault for API keys and developer secrets.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
