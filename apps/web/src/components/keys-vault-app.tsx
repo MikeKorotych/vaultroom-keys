@@ -8,6 +8,7 @@ import {
   encryptVaultPayload,
   recoverVault,
   unlockVault,
+  validateVaultEnvelope,
   type VaultEnvelope,
   type VaultEnvironment,
   type VaultItem,
@@ -167,8 +168,9 @@ export function KeysVaultApp() {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setError("");
-    const data = new FormData(event.currentTarget);
+    const data = new FormData(form);
     const passphrase = String(data.get("passphrase") ?? "");
     if (passphrase !== String(data.get("confirmation") ?? "")) {
       setError("The passphrases do not match");
@@ -184,7 +186,7 @@ export function KeysVaultApp() {
       setRecoveryKey(created.recoveryKey);
       setPhase("recovery");
       void pushCloud(created.envelope, 0);
-      event.currentTarget.reset();
+      form.reset();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Could not create the vault");
     } finally {
@@ -195,15 +197,16 @@ export function KeysVaultApp() {
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!envelope) return;
+    const form = event.currentTarget;
     setError("");
     setBusy(true);
     try {
-      const data = new FormData(event.currentTarget);
+      const data = new FormData(form);
       const unlocked = await unlockVault(envelope, String(data.get("passphrase") ?? ""));
       setPayload(unlocked.payload);
       setVaultKey(unlocked.vaultKey);
       setPhase("unlocked");
-      event.currentTarget.reset();
+      form.reset();
     } catch {
       setError("That passphrase cannot unlock this vault");
     } finally {
@@ -214,10 +217,11 @@ export function KeysVaultApp() {
   async function recover(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!envelope) return;
+    const form = event.currentTarget;
     setError("");
     setBusy(true);
     try {
-      const data = new FormData(event.currentTarget);
+      const data = new FormData(form);
       const newPassphrase = String(data.get("newPassphrase") ?? "");
       if (newPassphrase !== String(data.get("confirmation") ?? "")) {
         throw new Error("The new passphrases do not match");
@@ -230,7 +234,7 @@ export function KeysVaultApp() {
       setVaultKey(recovered.vaultKey);
       setPhase("unlocked");
       void pushCloud(nextEnvelope, cloudRevision);
-      event.currentTarget.reset();
+      form.reset();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Recovery failed");
     } finally {
@@ -296,7 +300,8 @@ export function KeysVaultApp() {
   async function importVault(file: File) {
     setError("");
     try {
-      const imported = JSON.parse(await file.text()) as VaultEnvelope;
+      if (file.size > 2 * 1024 * 1024) throw new Error("Backup is too large");
+      const imported = await validateVaultEnvelope(JSON.parse(await file.text()));
       await saveLocalVault({ envelope: imported, cloudRevision });
       if (vaultKey) await destroyVaultKey(vaultKey);
       setEnvelope(imported);

@@ -6,6 +6,7 @@ import {
   encryptVaultPayload,
   recoverVault,
   unlockVault,
+  validateVaultEnvelope,
   type VaultItem,
 } from "./index";
 
@@ -75,5 +76,17 @@ describe("vault envelope", () => {
 
     await destroyVaultKey(created.vaultKey);
     await destroyVaultKey(recovered.vaultKey);
+  });
+
+  it("validates a complete envelope before import", async () => {
+    const created = await createVault(passphrase);
+    await expect(validateVaultEnvelope(structuredClone(created.envelope))).resolves.toEqual(
+      created.envelope,
+    );
+
+    const invalid = structuredClone(created.envelope) as unknown as Record<string, unknown>;
+    invalid.payload = { algorithm: "xchacha20poly1305", nonce: "invalid", ciphertext: "invalid" };
+    await expect(validateVaultEnvelope(invalid)).rejects.toBeInstanceOf(VaultCryptoError);
+    await destroyVaultKey(created.vaultKey);
   });
 });

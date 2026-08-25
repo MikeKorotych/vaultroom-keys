@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider telemetry={false}>
       <html lang="en"><body>{children}</body></html>
     </ClerkProvider>
   );

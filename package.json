@@ -9,5 +9,8 @@
     "test": "pnpm --recursive test",
     "typecheck": "pnpm --recursive typecheck",
     "plan": "open docs/plan.html"
+  },
+  "devDependencies": {
+    "next": "16.3.2"
   }
 }

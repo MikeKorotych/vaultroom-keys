@@ -2,7 +2,7 @@
 
 ## Phase 0: security design
 
-Status: in progress.
+Status: complete.
 
 - Agree on the threat model and explicit non-goals
 - Decide the first encrypted payload format
@@ -13,6 +13,8 @@ Status: in progress.
 Exit criteria: the key hierarchy, metadata leakage, recovery policy and web-client limitation are written and reviewable.
 
 ## Phase 1: local encrypted vault
+
+Status: complete for private beta.
 
 - Create, edit and delete API-key entries
 - Lock and unlock with a master passphrase
@@ -25,6 +27,8 @@ Exit criteria: the key hierarchy, metadata leakage, recovery policy and web-clie
 Exit criteria: the application works offline and no network request contains vault plaintext.
 
 ## Phase 2: encrypted backup and sync
+
+Status: core flow complete; conflict-resolution UI remains.
 
 - Replace inherited room endpoints with opaque vault blob endpoints
 - Optimistic revision checks and encrypted history
@@ -58,9 +62,9 @@ Browser extension and autofill are separate security projects, not small UI addi
 
 ## Immediate backlog
 
-1. Replace inherited data-room naming and routes in the web application.
-2. Add an isolated `packages/crypto` module with no React or network imports.
-3. Define the versioned encrypted envelope TypeScript schema.
-4. Add fake fixtures and golden vectors.
-5. Build locked, onboarding and unlocked vault screens.
-6. Implement local-only create/copy/reveal/export flow.
+1. Add an explicit conflict-resolution screen with local/cloud ciphertext choices.
+2. Add deterministic golden vectors and Chromium/Firefox/WebKit coverage.
+3. Remove dormant inherited data-room source and database models in a dedicated migration.
+4. Add a passphrase-change screen for an already unlocked vault.
+5. Add encrypted revision restore UI.
+6. Commission an independent cryptographic and XSS review.

@@ -111,12 +111,41 @@ function validatePassphrase(passphrase: string) {
   if (passphrase.length > 1024) throw new VaultCryptoError("Passphrase is too long");
 }
 
-function validateEnvelope(envelope: VaultEnvelope) {
+function validateBox(value: unknown): asserts value is EncryptedBox {
+  if (!value || typeof value !== "object") throw new VaultCryptoError("Invalid encrypted box");
+  const box = value as Partial<EncryptedBox>;
+  if (
+    box.algorithm !== "xchacha20poly1305" ||
+    typeof box.nonce !== "string" ||
+    typeof box.ciphertext !== "string"
+  ) {
+    throw new VaultCryptoError("Invalid encrypted box");
+  }
+  try {
+    if (decode(box.nonce).length !== sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES) {
+      throw new VaultCryptoError("Invalid encrypted nonce");
+    }
+    if (decode(box.ciphertext).length < sodium.crypto_aead_xchacha20poly1305_ietf_ABYTES) {
+      throw new VaultCryptoError("Invalid encrypted payload");
+    }
+  } catch (error) {
+    if (error instanceof VaultCryptoError) throw error;
+    throw new VaultCryptoError("Invalid encrypted encoding");
+  }
+}
+
+function validateEnvelope(value: unknown): asserts value is VaultEnvelope {
+  if (!value || typeof value !== "object") throw new VaultCryptoError("Invalid vault envelope");
+  const envelope = value as Partial<VaultEnvelope>;
   if (envelope.format !== FORMAT || envelope.version !== VERSION) {
     throw new VaultCryptoError("Unsupported vault format");
   }
-  if (envelope.kdf.algorithm !== "argon2id13") throw new VaultCryptoError("Unsupported KDF");
+  if (!envelope.kdf || envelope.kdf.algorithm !== "argon2id13") {
+    throw new VaultCryptoError("Unsupported KDF");
+  }
   if (
+    !Number.isSafeInteger(envelope.kdf.opsLimit) ||
+    !Number.isSafeInteger(envelope.kdf.memLimit) ||
     envelope.kdf.opsLimit < sodium.crypto_pwhash_OPSLIMIT_MIN ||
     envelope.kdf.opsLimit > sodium.crypto_pwhash_OPSLIMIT_MODERATE ||
     envelope.kdf.memLimit < sodium.crypto_pwhash_MEMLIMIT_MIN ||
@@ -124,9 +153,23 @@ function validateEnvelope(envelope: VaultEnvelope) {
   ) {
     throw new VaultCryptoError("Unsafe KDF parameters");
   }
-  if (decode(envelope.kdf.salt).length !== sodium.crypto_pwhash_SALTBYTES) {
+  try {
+    if (decode(envelope.kdf.salt).length !== sodium.crypto_pwhash_SALTBYTES) {
+      throw new VaultCryptoError("Invalid vault salt");
+    }
+  } catch (error) {
+    if (error instanceof VaultCryptoError) throw error;
     throw new VaultCryptoError("Invalid vault salt");
   }
+  validateBox(envelope.passphraseWrappedKey);
+  validateBox(envelope.recoveryWrappedKey);
+  validateBox(envelope.payload);
+  if (
+    typeof envelope.createdAt !== "string" ||
+    typeof envelope.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(envelope.createdAt)) ||
+    !Number.isFinite(Date.parse(envelope.updatedAt))
+  ) throw new VaultCryptoError("Invalid vault timestamps");
 }
 
 function validatePayload(value: unknown): asserts value is VaultPayload {
@@ -202,6 +245,12 @@ export async function createVault(passphrase: string): Promise<UnlockedVault & {
     sodium.memzero(passphraseKey);
     sodium.memzero(recoveryBytes);
   }
+}
+
+export async function validateVaultEnvelope(value: unknown): Promise<VaultEnvelope> {
+  await sodium.ready;
+  validateEnvelope(value);
+  return value;
 }
 
 export async function unlockVault(envelope: VaultEnvelope, passphrase: string): Promise<UnlockedVault> {

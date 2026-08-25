@@ -1,6 +1,6 @@
 # Threat model
 
-Status: draft 0.1. No production secrets are allowed while this document is unresolved.
+Status: private beta 0.2. Core controls are implemented and smoke-tested; independent cryptographic review remains a release gate for high-value credentials.
 
 ## Security goal
 
@@ -27,7 +27,6 @@ A compromise of the API database, object storage or routine server logs must not
 
 - Nest API
 - PostgreSQL
-- S3-compatible storage
 - Railway, Vercel and their operators
 - Clerk session infrastructure
 - Network intermediaries
@@ -53,7 +52,7 @@ Clerk proves which account may read or replace a ciphertext blob. It is not part
 - Team sharing and organisation recovery
 - Browser autofill and extension attack surfaces
 
-## Proposed key hierarchy
+## Implemented key hierarchy
 
 1. Generate a random 256-bit vault data key in the browser.
 2. Derive a key-encryption key from the master passphrase with a memory-hard KDF and a random salt.
@@ -62,7 +61,7 @@ Clerk proves which account may read or replace a ciphertext blob. It is not part
 5. Generate a high-entropy recovery key and create a second wrapped copy of the same vault data key.
 6. Upload only ciphertext, salts, nonces, KDF parameters, format version and wrapped keys.
 
-Candidate implementation: Argon2id for passphrase derivation and AES-256-GCM or XChaCha20-Poly1305 for authenticated encryption. The choice is not final until the prototype has test vectors, browser compatibility measurements and an external review.
+Format v1 uses Argon2id for passphrase derivation and XChaCha20-Poly1305 authenticated encryption through `libsodium-wrappers-sumo`. Interactive libsodium KDF parameters are stored in the envelope and bounded during validation. The implementation still requires independent review before a broader security claim.
 
 ## Recovery policy
 
@@ -101,7 +100,7 @@ Zero-knowledge claims are limited when the server delivers mutable JavaScript. A
 - Reveal expires automatically.
 - Copy requires an explicit action and clears the clipboard after a short interval when the platform permits it.
 - Secret values never enter URLs, query strings, analytics or DOM attributes.
-- The application locks on inactivity, tab close and explicit user action.
+- The application locks after ten minutes of inactivity and on explicit user action. Closing the tab discards the in-memory React state; IndexedDB contains ciphertext only.
 
 ## Logging rules
 
@@ -109,11 +108,13 @@ No request body, decrypted payload, passphrase, recovery key, secret value or ex
 
 ## Release gate
 
-Real credentials remain prohibited until:
+High-value credentials should wait until:
 
-- Crypto format and KDF parameters are versioned
-- Golden test vectors pass in supported browsers
-- Wrong passphrase, tampering and rollback tests pass
-- XSS and dependency review is complete
-- Export/import and recovery drills pass
+- [x] Crypto format and KDF parameters are versioned
+- [x] Wrong passphrase and tampering tests pass
+- [x] Export/import, recovery and clean-browser cloud restore drills pass
+- [x] Production requests and stored database envelopes were checked for a fake plaintext marker
+- [x] CSP and defensive response headers are enabled
+- [ ] Deterministic golden vectors and broader cross-browser coverage
+- [ ] Dedicated XSS and dependency review
 - An independent reviewer examines the design and implementation

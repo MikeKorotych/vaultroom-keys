@@ -11,3 +11,4 @@ uploads
 .playwright-cli
 output/playwright
 .private
+.vercel
