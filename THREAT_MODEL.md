@@ -1,6 +1,6 @@
 # Threat model
 
-Status: private beta 0.2. Core controls are implemented and smoke-tested; independent cryptographic review remains a release gate for high-value credentials.
+Status: open-source beta 0.3. Core controls are implemented and smoke-tested; independent cryptographic review remains a release gate for high-value credentials.
 
 ## Security goal
 

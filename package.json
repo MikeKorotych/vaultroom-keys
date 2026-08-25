@@ -1,6 +1,9 @@
 {
   "name": "vaultroom-keys",
   "private": true,
+  "license": "MIT",
+  "homepage": "https://vaultroom-keys.vercel.app",
+  "repository": "https://github.com/MikeKorotych/vaultroom-keys",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "pnpm --parallel --filter ./apps/* dev",

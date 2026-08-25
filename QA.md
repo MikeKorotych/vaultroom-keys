@@ -36,4 +36,4 @@ Checked against <https://vaultroom-ruby.vercel.app> and the Railway API:
 8. Rename the room in Review → Room.
 9. Delete a disposable room and verify that it disappears from the rail.
 
-The hosted take-home intentionally uses Clerk development keys: Google authentication works, while enabling a Clerk production instance would require purchasing and configuring a custom domain solely for the assignment. A real product launch would replace the keys after domain, DNS and production OAuth verification.
+The public beta currently uses Clerk development keys. This keeps the hosted demo free, but it also imposes Clerk's development limits and displays its development-mode notice. A production release must use a verified domain, production OAuth credentials and production Clerk keys.

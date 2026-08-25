@@ -14,7 +14,7 @@ Exit criteria: the key hierarchy, metadata leakage, recovery policy and web-clie
 
 ## Phase 1: local encrypted vault
 
-Status: complete for private beta.
+Status: complete for open-source beta.
 
 - Create, edit and delete API-key entries
 - Lock and unlock with a master passphrase

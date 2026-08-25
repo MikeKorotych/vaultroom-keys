@@ -1,8 +1,8 @@
 # Vaultroom Keys
 
-Vaultroom Keys is a private, encrypted backup vault for API keys and developer secrets. It is a product fork of the Vaultroom data-room assignment, but it has a different trust model: the browser must encrypt every secret before it reaches the API.
+Vaultroom Keys is an open-source, client-encrypted backup vault for API keys and developer secrets. It started as a product fork of the Vaultroom data-room assignment, then moved to a different problem and trust model: the browser must encrypt every secret before it reaches the API.
 
-The first private beta is deployed and end-to-end tested. It is suitable for personal evaluation with non-critical credentials; keep an independent encrypted backup while the crypto design is still awaiting an external review.
+The beta is deployed and end-to-end tested. It is suitable for personal evaluation with non-critical credentials. Keep an independent encrypted backup while the crypto design is still awaiting an external review.
 
 ## First useful release
 
@@ -50,7 +50,9 @@ Format v1 uses Argon2id and XChaCha20-Poly1305 through libsodium. The encrypted 
 - `packages/crypto`: isolated key derivation, wrapping, encryption and recovery logic
 - `THREAT_MODEL.md`: assets, attackers, boundaries and recovery policy
 - `ROADMAP.md`: implementation phases and acceptance criteria
-- `docs/plan.html`: interactive living product manual
+- `docs/plan.html`: interactive product manual
+- `SECURITY.md`: responsible disclosure and supported-version policy
+- `CONTRIBUTING.md`: local checks and contribution boundaries
 
 ## Commands
 
@@ -64,7 +66,7 @@ pnpm build
 pnpm plan
 ```
 
-`pnpm plan` opens the private product manual on macOS.
+`pnpm plan` opens the product manual on macOS.
 
 ## Status
 
@@ -72,4 +74,10 @@ Production beta: <https://vaultroom-keys.vercel.app>
 
 API health: <https://vaultroom-keys-api-production.up.railway.app/health>
 
-The original Vaultroom assignment remains available at <https://github.com/MikeKorotych/vaultroom-data-room>. This repository is private and independent. Never commit passphrases, recovery keys, exported vaults or real API keys to Git.
+The original Vaultroom assignment remains available at <https://github.com/MikeKorotych/vaultroom-data-room>. This repository is its independent, MIT-licensed product pivot. Never commit passphrases, recovery keys, exported vaults or real API keys to Git.
+
+The monochrome dots/plasma background is a web-native Canvas interpretation inspired by the [MetalForge editor preset](https://metalforge.xyz/editor#effect=dots&style=plasma). It does not load MetalForge code or send application data to that service.
+
+## AI use
+
+Codex was used for implementation, refactoring, test generation, UI iterations, documentation and browser QA. I defined the product pivot, scope, trust model and release decisions, then reviewed the generated changes and verified the working flows. The cryptographic design still needs an independent human security review before the project should hold high-value credentials.

@@ -2,13 +2,15 @@ import { Show, SignInButton } from "@clerk/nextjs";
 import { KeyRound } from "lucide-react";
 import { KeysVaultApp } from "@/components/keys-vault-app";
 import { SecurityExplainer } from "@/components/security-explainer";
+import { DotPlasmaBackground } from "@/components/dot-plasma-background";
 
 export default function Home() {
   return (
     <>
+      <DotPlasmaBackground />
       <Show when="signed-out">
         <main className="signInPage">
-          <div className="signInMark"><KeyRound /> VAULTROOM KEYS / PRIVATE BETA</div>
+          <div className="signInMark"><KeyRound /> VAULTROOM KEYS / OPEN SOURCE BETA</div>
           <section>
             <p className="eyebrow">CLIENT-ENCRYPTED DEVELOPER VAULT</p>
             <h1>Your keys.<br />Unreadable to us.</h1>

@@ -1,5 +1,12 @@
 # Changelog
 
+## Open-source beta 0.3
+
+- Moved the visual system to the monochrome palette used by EasyOffer.
+- Added a local Canvas dots/plasma background with reduced-motion support and no third-party runtime dependency.
+- Added an MIT license, contribution guide and responsible disclosure policy.
+- Documented the public product pivot and the current security limits.
+
 ## 2026-08-25
 
 - Created the private Vaultroom Keys product fork from the completed Vaultroom assignment.
