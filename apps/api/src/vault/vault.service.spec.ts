@@ -59,7 +59,21 @@ describe('VaultService', () => {
           },
         ),
         findMany: jest.fn(() => Promise.resolve([])),
-        deleteMany: jest.fn(),
+        deleteMany: jest.fn(
+          ({
+            where,
+          }: {
+            where: { vaultId?: string; id?: { in: string[] } };
+          }) => {
+            const kept = history.filter(
+              (item) =>
+                item.vaultId !== where.vaultId &&
+                !where.id?.in.includes(item.id),
+            );
+            history.splice(0, history.length, ...kept);
+            return Promise.resolve({ count: 0 });
+          },
+        ),
       },
     };
     const prisma = {
@@ -84,6 +98,30 @@ describe('VaultService', () => {
     expect(updated.vault.revision).toBe(2);
     expect(history).toHaveLength(1);
     expect(JSON.stringify(updated)).not.toContain('secret-value');
+  });
+
+  it('drops the encrypted history after a rekey', async () => {
+    const { service, history } = setup();
+    await service.put('owner-1', 0, envelope);
+    await service.put('owner-1', 1, {
+      ...envelope,
+      payload: { ciphertext: 'a' },
+    });
+    await service.put('owner-1', 2, {
+      ...envelope,
+      payload: { ciphertext: 'b' },
+    });
+    expect(history).toHaveLength(2);
+
+    const rekeyed = await service.put(
+      'owner-1',
+      3,
+      { ...envelope, payload: { ciphertext: 'rekeyed' } },
+      true,
+    );
+
+    expect(rekeyed.vault.revision).toBe(4);
+    expect(history).toHaveLength(0);
   });
 
   it('rejects stale writes', async () => {

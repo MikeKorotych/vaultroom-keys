@@ -25,6 +25,7 @@ export class VaultService {
     ownerId: string,
     expectedRevision: number,
     envelope: Record<string, unknown>,
+    resetHistory = false,
   ) {
     this.validateEnvelope(envelope);
     const envelopeJson = envelope as Prisma.InputJsonValue;
@@ -48,13 +49,21 @@ export class VaultService {
         throw new ConflictException('Vault revision changed');
       }
 
-      await transaction.vaultRevision.create({
-        data: {
-          vaultId: existing.id,
-          revision: existing.revision,
-          envelope: existing.envelope as Prisma.InputJsonValue,
-        },
-      });
+      if (resetHistory) {
+        // The vault was rekeyed: older envelopes still open with the old passphrase or
+        // recovery key, so the previous one is not archived and the history goes.
+        await transaction.vaultRevision.deleteMany({
+          where: { vaultId: existing.id },
+        });
+      } else {
+        await transaction.vaultRevision.create({
+          data: {
+            vaultId: existing.id,
+            revision: existing.revision,
+            envelope: existing.envelope as Prisma.InputJsonValue,
+          },
+        });
+      }
 
       const nextRevision = existing.revision + 1;
       const updated = await transaction.encryptedVault.update({

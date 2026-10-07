@@ -213,10 +213,12 @@ function formatRecoveryKey(key: Uint8Array) {
   return `${RECOVERY_PREFIX}${encode(key)}.${encode(sodium.crypto_generichash(4, key, null))}`;
 }
 
-export async function createVault(passphrase: string): Promise<UnlockedVault & { recoveryKey: string }> {
-  validatePassphrase(passphrase);
-  await sodium.ready;
-
+/** Fresh vault data key, recovery key and passphrase salt around a payload. */
+function sealVault(
+  passphrase: string,
+  payload: VaultPayload,
+  createdAt: string,
+): UnlockedVault & { recoveryKey: string } {
   const now = new Date().toISOString();
   const vaultKey = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
   const recoveryBytes = sodium.randombytes_buf(sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
@@ -227,7 +229,6 @@ export async function createVault(passphrase: string): Promise<UnlockedVault & {
     salt: encode(sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES)),
   };
   const passphraseKey = derivePassphraseKey(passphrase, kdf);
-  const payload: VaultPayload = { version: 1, sequence: 0, items: [] };
 
   try {
     const envelope: VaultEnvelope = {
@@ -237,7 +238,7 @@ export async function createVault(passphrase: string): Promise<UnlockedVault & {
       passphraseWrappedKey: encryptBox(vaultKey, passphraseKey, kdfAad(kdf)),
       recoveryWrappedKey: encryptBox(vaultKey, recoveryBytes, RECOVERY_WRAP_CONTEXT),
       payload: encryptBox(JSON.stringify(payload), vaultKey, PAYLOAD_CONTEXT),
-      createdAt: now,
+      createdAt,
       updatedAt: now,
     };
     return { envelope, payload, vaultKey, recoveryKey: formatRecoveryKey(recoveryBytes) };
@@ -245,6 +246,12 @@ export async function createVault(passphrase: string): Promise<UnlockedVault & {
     sodium.memzero(passphraseKey);
     sodium.memzero(recoveryBytes);
   }
+}
+
+export async function createVault(passphrase: string): Promise<UnlockedVault & { recoveryKey: string }> {
+  validatePassphrase(passphrase);
+  await sodium.ready;
+  return sealVault(passphrase, { version: 1, sequence: 0, items: [] }, new Date().toISOString());
 }
 
 export async function validateVaultEnvelope(value: unknown): Promise<VaultEnvelope> {
@@ -314,29 +321,21 @@ export async function encryptVaultPayload(
   };
 }
 
-export async function changePassphrase(
+/**
+ * Re-encrypts the vault under a new passphrase with a new data key and a new recovery key.
+ * Rewrapping the old data key would leave every earlier envelope (server history, other
+ * devices) readable with the old passphrase or recovery key, so neither is reused. Exports
+ * made before still open with the old secrets. The caller destroys `unlocked.vaultKey`.
+ */
+export async function rekeyVault(
   unlocked: UnlockedVault,
   newPassphrase: string,
-): Promise<VaultEnvelope> {
+): Promise<UnlockedVault & { recoveryKey: string }> {
   validatePassphrase(newPassphrase);
   await sodium.ready;
-  const kdf: VaultKdf = {
-    algorithm: "argon2id13",
-    opsLimit: sodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
-    memLimit: sodium.crypto_pwhash_MEMLIMIT_INTERACTIVE,
-    salt: encode(sodium.randombytes_buf(sodium.crypto_pwhash_SALTBYTES)),
-  };
-  const passphraseKey = derivePassphraseKey(newPassphrase, kdf);
-  try {
-    return {
-      ...unlocked.envelope,
-      kdf,
-      passphraseWrappedKey: encryptBox(unlocked.vaultKey, passphraseKey, kdfAad(kdf)),
-      updatedAt: new Date().toISOString(),
-    };
-  } finally {
-    sodium.memzero(passphraseKey);
-  }
+  validateEnvelope(unlocked.envelope);
+  validatePayload(unlocked.payload);
+  return sealVault(newPassphrase, unlocked.payload, unlocked.envelope.createdAt);
 }
 
 export async function destroyVaultKey(key: Uint8Array) {
