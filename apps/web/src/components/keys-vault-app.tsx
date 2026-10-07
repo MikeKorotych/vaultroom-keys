@@ -2,11 +2,11 @@
 
 import { useAuth, UserButton } from "@clerk/nextjs";
 import {
-  changePassphrase,
   createVault,
   destroyVaultKey,
   encryptVaultPayload,
   recoverVault,
+  rekeyVault,
   unlockVault,
   validateVaultEnvelope,
   type VaultEnvelope,
@@ -75,6 +75,7 @@ export function KeysVaultApp() {
   const [vaultKey, setVaultKey] = useState<Uint8Array | null>(null);
   const [recoveryKey, setRecoveryKey] = useState("");
   const [recoverySaved, setRecoverySaved] = useState(false);
+  const [recoveryReplaced, setRecoveryReplaced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -86,6 +87,8 @@ export function KeysVaultApp() {
   const [syncState, setSyncState] = useState<SyncState>("loading");
   const [railCompact, setRailCompact] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  // After a rekey the server must drop its older envelopes; kept until a push succeeds.
+  const historyResetPending = useRef(false);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -106,6 +109,7 @@ export function KeysVaultApp() {
         const selectedEnvelope = useRemote ? remote.vault!.envelope : local?.envelope ?? null;
         const selectedRevision = useRemote ? remote.vault!.revision : local?.cloudRevision ?? 0;
         if (useRemote) await saveLocalVault(userId, { envelope: selectedEnvelope!, cloudRevision: selectedRevision });
+        historyResetPending.current = !useRemote && Boolean(local?.resetHistoryPending);
         setEnvelope(selectedEnvelope);
         setCloudRevision(selectedRevision);
         setSyncState(remote.vault || local ? "synced" : "local");
@@ -113,6 +117,7 @@ export function KeysVaultApp() {
       } catch (nextError) {
         const local = await loadLocalVault(userId).catch(() => null);
         if (cancelled) return;
+        historyResetPending.current = Boolean(local?.resetHistoryPending);
         setEnvelope(local?.envelope ?? null);
         setCloudRevision(local?.cloudRevision ?? 0);
         setSyncState("offline");
@@ -167,8 +172,13 @@ export function KeysVaultApp() {
     try {
       const response = await apiRequest<CloudVaultResponse>(getToken, "/vault", {
         method: "PUT",
-        body: JSON.stringify({ expectedRevision, envelope: nextEnvelope }),
+        body: JSON.stringify({
+          expectedRevision,
+          envelope: nextEnvelope,
+          ...(historyResetPending.current ? { resetHistory: true } : {}),
+        }),
       });
+      historyResetPending.current = false;
       const revision = response.vault?.revision ?? expectedRevision;
       setCloudRevision(revision);
       await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision: revision });
@@ -243,13 +253,18 @@ export function KeysVaultApp() {
         throw new Error("The new passphrases do not match");
       }
       const recovered = await recoverVault(envelope, String(data.get("recoveryKey") ?? ""));
-      const nextEnvelope = await changePassphrase(recovered, newPassphrase);
-      await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision });
-      setEnvelope(nextEnvelope);
-      setPayload(recovered.payload);
-      setVaultKey(recovered.vaultKey);
-      setPhase("unlocked");
-      void pushCloud(nextEnvelope, cloudRevision);
+      // A used recovery key may be exposed: the vault gets a new data key and recovery key.
+      const rekeyed = await rekeyVault(recovered, newPassphrase).finally(() => destroyVaultKey(recovered.vaultKey));
+      historyResetPending.current = true;
+      await saveLocalVault(userId, { envelope: rekeyed.envelope, cloudRevision, resetHistoryPending: true });
+      setEnvelope(rekeyed.envelope);
+      setPayload(rekeyed.payload);
+      setVaultKey(rekeyed.vaultKey);
+      setRecoveryKey(rekeyed.recoveryKey);
+      setRecoverySaved(false);
+      setRecoveryReplaced(true);
+      setPhase("recovery");
+      void pushCloud(rekeyed.envelope, cloudRevision);
       form.reset();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Recovery failed");
@@ -262,7 +277,7 @@ export function KeysVaultApp() {
     if (!envelope || !vaultKey || !payload || !userId) return;
     const nextPayload: VaultPayload = { version: 1, sequence: payload.sequence + 1, items };
     const nextEnvelope = await encryptVaultPayload(envelope, vaultKey, nextPayload);
-    await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision });
+    await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision, resetHistoryPending: historyResetPending.current });
     setPayload(nextPayload);
     setEnvelope(nextEnvelope);
     void pushCloud(nextEnvelope, cloudRevision);
@@ -317,7 +332,7 @@ export function KeysVaultApp() {
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error("Backup is too large");
       const imported = await validateVaultEnvelope(JSON.parse(await file.text()));
-      await saveLocalVault(userId, { envelope: imported, cloudRevision });
+      await saveLocalVault(userId, { envelope: imported, cloudRevision, resetHistoryPending: historyResetPending.current });
       if (vaultKey) await destroyVaultKey(vaultKey);
       setEnvelope(imported);
       setVaultKey(null);
@@ -343,13 +358,14 @@ export function KeysVaultApp() {
           <p className="keysKicker">ONE-TIME RECOVERY KIT</p>
           <h1>Save this outside your Mac.</h1>
           <p>This key can recover the vault if you forget the master passphrase. We cannot regenerate it.</p>
+          {recoveryReplaced && <p>Your old passphrase and recovery key no longer open this vault. Backups exported before now still open with them.</p>}
           <code>{recoveryKey}</code>
           <div className="recoveryActions">
             <button onClick={() => void navigator.clipboard.writeText(recoveryKey)}><Clipboard /> Copy</button>
             <button onClick={() => downloadText("vaultroom-recovery-key.txt", recoveryKey)}><Download /> Download</button>
           </div>
           <label className="recoveryCheck"><input type="checkbox" checked={recoverySaved} onChange={(event) => setRecoverySaved(event.target.checked)} /> I stored the recovery key somewhere separate</label>
-          <button className="keysPrimary" disabled={!recoverySaved} onClick={() => { setRecoveryKey(""); setPhase("unlocked"); }}><ShieldCheck /> Enter my vault</button>
+          <button className="keysPrimary" disabled={!recoverySaved} onClick={() => { setRecoveryKey(""); setRecoveryReplaced(false); setPhase("unlocked"); }}><ShieldCheck /> Enter my vault</button>
         </section>
       </main>
     );

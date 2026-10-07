@@ -5,6 +5,7 @@ import {
   destroyVaultKey,
   encryptVaultPayload,
   recoverVault,
+  rekeyVault,
   unlockVault,
   validateVaultEnvelope,
   type VaultItem,
@@ -76,6 +77,35 @@ describe("vault envelope", () => {
 
     await destroyVaultKey(created.vaultKey);
     await destroyVaultKey(recovered.vaultKey);
+  });
+
+  it("rekeys on recovery so the old passphrase and recovery key stop working", async () => {
+    const created = await createVault(passphrase);
+    const envelope = await encryptVaultPayload(created.envelope, created.vaultKey, {
+      version: 1,
+      sequence: 1,
+      items: [fakeItem()],
+    });
+    const recovered = await recoverVault(envelope, created.recoveryKey);
+    const rekeyed = await rekeyVault(recovered, "a brand new passphrase");
+
+    expect(rekeyed.recoveryKey).not.toBe(created.recoveryKey);
+    expect(rekeyed.vaultKey).not.toEqual(recovered.vaultKey);
+    expect(rekeyed.envelope.createdAt).toBe(created.envelope.createdAt);
+    await expect(unlockVault(rekeyed.envelope, passphrase)).rejects.toBeInstanceOf(VaultCryptoError);
+    await expect(recoverVault(rekeyed.envelope, created.recoveryKey)).rejects.toBeInstanceOf(VaultCryptoError);
+
+    const unlocked = await unlockVault(rekeyed.envelope, "a brand new passphrase");
+    expect(unlocked.payload).toEqual(recovered.payload);
+    const viaNewRecovery = await recoverVault(rekeyed.envelope, rekeyed.recoveryKey);
+    expect(viaNewRecovery.payload.items[0]?.secret).toBe("sk-or-v1-fake-never-use");
+
+    // The old envelope cannot be opened with what the new vault hands out
+    await expect(recoverVault(envelope, rekeyed.recoveryKey)).rejects.toBeInstanceOf(VaultCryptoError);
+
+    for (const key of [created.vaultKey, recovered.vaultKey, rekeyed.vaultKey, unlocked.vaultKey, viaNewRecovery.vaultKey]) {
+      await destroyVaultKey(key);
+    }
   });
 
   it("validates a complete envelope before import", async () => {

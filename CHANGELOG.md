@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Recovery now rekeys the vault: a new data key and a new recovery key replace the old ones, so a used recovery key or a forgotten passphrase cannot open the vault again. The API drops the encrypted revision history that the old secrets could still read.
+
 ## Open-source beta 0.3
 
 - Moved the visual system to the monochrome palette used by EasyOffer.

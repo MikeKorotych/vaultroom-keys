@@ -67,7 +67,8 @@ Format v1 uses Argon2id for passphrase derivation and XChaCha20-Poly1305 authent
 
 - The service cannot reset the master passphrase.
 - The recovery key is shown once and can be exported or printed.
-- A recovery operation unwraps the vault data key and allows creation of a new passphrase wrapper.
+- A recovery operation unwraps the vault data key, then rekeys the vault: a new data key, a new recovery key and a new passphrase salt. The new recovery key is shown once.
+- After a rekey the old passphrase and recovery key no longer open the vault. The client asks the API to drop the encrypted revision history, which was readable with them, and keeps asking until one upload succeeds. Exports made before the rekey still open with the old secrets.
 - Losing both passphrase and recovery key permanently loses the vault.
 - Support staff must never request a passphrase, recovery key or decrypted export.
 
@@ -91,7 +92,7 @@ Zero-knowledge claims are limited when the server delivers mutable JavaScript. A
 - Every encrypted blob has a monotonically increasing revision and authenticated format metadata.
 - The client sends the expected previous revision when writing.
 - The API rejects stale writes instead of silently overwriting them.
-- The server keeps a bounded encrypted revision history for recovery.
+- The server keeps a bounded encrypted revision history for recovery and drops it when the client reports a rekey.
 - The client warns if the server presents a revision older than the last locally observed revision.
 
 ## Clipboard and UI

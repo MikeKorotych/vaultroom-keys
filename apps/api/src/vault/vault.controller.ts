@@ -16,6 +16,11 @@ export class VaultController {
 
   @Put()
   put(@AuthUser() ownerId: string, @Body() input: PutVaultDto) {
-    return this.vaults.put(ownerId, input.expectedRevision, input.envelope);
+    return this.vaults.put(
+      ownerId,
+      input.expectedRevision,
+      input.envelope,
+      input.resetHistory ?? false,
+    );
   }
 }

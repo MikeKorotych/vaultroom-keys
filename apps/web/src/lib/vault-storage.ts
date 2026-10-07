@@ -7,6 +7,8 @@ const recordKey = (ownerId: string) => `primary:${ownerId}`;
 export interface LocalVaultRecord {
   envelope: VaultEnvelope;
   cloudRevision: number;
+  /** The vault was rekeyed and the server has not yet dropped its older envelopes. */
+  resetHistoryPending?: boolean;
 }
 
 function openDatabase() {
