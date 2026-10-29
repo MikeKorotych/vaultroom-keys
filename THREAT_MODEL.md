@@ -148,3 +148,8 @@ Client mutations, unlock and import use one synchronous operation guard held thr
 local and cloud-completion writes. Lock still discards plaintext immediately; reopening
 waits for the committed envelope so it cannot overwrite a saved edit from stale state.
 Cloud writes time out after 30 seconds; failures retain the encrypted local copy.
+
+For `PUT /vault`, Clerk token verification runs before the large JSON parser using the
+same authentication routine as the controller guard. Missing/forged tokens are rejected
+before reading/parsing the body; a Bearer-shaped header alone does not grant the larger
+request allowance. Controller authorization remains in place as a second boundary.
