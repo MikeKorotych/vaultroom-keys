@@ -81,3 +81,16 @@ The monochrome dots/plasma background is a web-native Canvas interpretation insp
 ## AI use
 
 Codex was used for implementation, refactoring, test generation, UI iterations, documentation and browser QA. I defined the product pivot, scope, UI/UX, then reviewed the generated changes and verified the working flows.
+
+### Files and custom environments
+
+In **Add secret**, choose a file instead of a text secret (up to 5 MiB each, 10 MiB total).
+Save it with a service, label and environment. Use the file's download button to retrieve
+its original bytes; the downloaded copy is unencrypted. Edit the entry to replace or remove
+a file, or delete the entry. Encrypted exports include files automatically.
+
+Use **Manage environments** to add or rename tabs. When deleting a tab containing entries,
+select another environment to receive them. Names are encrypted and included in backups.
+`All secrets` is permanent. Deploy the API and web changes together: file synchronization
+requires the new request/envelope limits. See [THREAT_MODEL.md](THREAT_MODEL.md) for limits
+and browser-memory/download caveats.

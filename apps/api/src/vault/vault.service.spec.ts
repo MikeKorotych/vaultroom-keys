@@ -138,4 +138,19 @@ describe('VaultService', () => {
       service.put('owner-1', 0, { hello: 'world' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+  it('accepts file-sized ciphertext and rejects envelopes above 20 MiB', async () => {
+    const { service } = setup();
+    await expect(
+      service.put('owner-1', 0, {
+        ...envelope,
+        payload: { ciphertext: 'a'.repeat(10 * 1024 * 1024) },
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      service.put('owner-1', 1, {
+        ...envelope,
+        payload: { ciphertext: 'a'.repeat(20 * 1024 * 1024) },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });

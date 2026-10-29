@@ -119,3 +119,37 @@ High-value credentials should wait until:
 - [ ] Deterministic golden vectors and broader cross-browser coverage
 - [ ] Dedicated XSS and dependency review
 - An independent reviewer examines the design and implementation
+
+## Encrypted files and environment tabs
+
+Files are embedded in the authenticated vault payload, never sent to the data-room upload
+endpoint or stored as plaintext objects. File bytes (URL-safe base64), sanitized download
+names, sizes, and custom environment names are encrypted with the same vault data key.
+Backup, recovery, rekey and revision-history rules apply to files as well as text secrets.
+New writes use payload version 2 within the existing version 1 encryption envelope; old
+clients reject the payload instead of silently dropping new fields. Existing payloads remain readable.
+
+Limits: 5 MiB per file, 10 MiB aggregate decoded file bytes per vault, 20 MiB serialized
+ciphertext envelope, 21 MiB API JSON body including request metadata. Compressed API JSON
+requests are rejected. These bounds account for two base64 expansions. Whole-vault syncing
+rewrites every file on each edit and retains at most five prior encrypted revisions.
+Environment names are limited to 50 unique names of 60 characters; deletion moves entries
+to a selected remaining environment rather than deleting secrets.
+
+Files are never previewed, parsed as documents or executed. Explicit downloads use an
+application/octet-stream Blob with a sanitized basename and a short-lived object URL.
+A downloaded file is plaintext outside the vault's protection. Removing a file does not
+remove it from older encrypted backups/history. The browser still holds decrypted data
+while unlocked; byte buffers are wiped where possible, but JavaScript strings and browser
+Blob copies cannot be reliably zeroized. This adds no stronger device/XSS guarantees than
+text secrets, and does not constitute an independent security audit.
+
+Client mutations, unlock and import use one synchronous operation guard held through
+local and cloud-completion writes. Lock still discards plaintext immediately; reopening
+waits for the committed envelope so it cannot overwrite a saved edit from stale state.
+Cloud writes time out after 30 seconds; failures retain the encrypted local copy.
+
+For `PUT /vault`, Clerk token verification runs before the large JSON parser using the
+same authentication routine as the controller guard. Missing/forged tokens are rejected
+before reading/parsing the body; a Bearer-shaped header alone does not grant the larger
+request allowance. Controller authorization remains in place as a second boundary.

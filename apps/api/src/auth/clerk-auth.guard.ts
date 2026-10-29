@@ -7,19 +7,27 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { verifyToken } from '@clerk/backend';
 
+type AuthRequest = {
+  headers: { authorization?: string };
+  userId?: string;
+};
+
 @Injectable()
 export class ClerkAuthGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<{
-      headers: Record<string, string | undefined>;
-      userId?: string;
-    }>();
+    await this.authenticateRequest(
+      context.switchToHttp().getRequest<AuthRequest>(),
+    );
+    return true;
+  }
+
+  async authenticateRequest(request: AuthRequest): Promise<void> {
     const bypassUser = this.config.get<string>('AUTH_BYPASS_USER_ID');
     if (bypassUser && this.config.get('NODE_ENV') !== 'production') {
       request.userId = bypassUser;
-      return true;
+      return;
     }
 
     const authorization = request.headers.authorization;
@@ -38,7 +46,7 @@ export class ClerkAuthGuard implements CanActivate {
         ],
       });
       request.userId = payload.sub;
-      return true;
+      return;
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
     }
