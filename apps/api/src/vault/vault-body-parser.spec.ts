@@ -96,7 +96,8 @@ describe('vault JSON transport bounds', () => {
         .put('/vault')
         .set('Authorization', authorization)
         .set('Content-Type', 'application/json')
-        .send('{"invalid":' + 'x'.repeat(1024 * 1024))
+        .set('Content-Length', String(1024 * 1024))
+        .send('{"invalid":')
         .expect(401);
     },
   );
