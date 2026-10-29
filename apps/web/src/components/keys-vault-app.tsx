@@ -56,6 +56,10 @@ type CloudVaultResponse = {
 
 const environments: VaultEnvironment[] = ["development", "staging", "production", "personal"];
 
+function environmentStyle(name: string) {
+  return environments.includes(name) ? name : "";
+}
+
 function formatDate(value: string | null) {
   if (!value) return "No expiry";
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(
@@ -183,6 +187,7 @@ export function KeysVaultApp() {
     try {
       const response = await apiRequest<CloudVaultResponse>(getToken, "/vault", {
         method: "PUT",
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           expectedRevision,
           envelope: nextEnvelope,
@@ -202,6 +207,21 @@ export function KeysVaultApp() {
     }
   }
 
+  function beginOperation() {
+    if (mutation.current) {
+      setError("Wait for the current vault operation to finish");
+      return false;
+    }
+    mutation.current = true;
+    setBusy(true);
+    return true;
+  }
+
+  function finishOperation() {
+    mutation.current = false;
+    setBusy(false);
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!userId) return;
@@ -213,7 +233,7 @@ export function KeysVaultApp() {
       setError("The passphrases do not match");
       return;
     }
-    setBusy(true);
+    if (!beginOperation()) return;
     try {
       const created = await createVault(passphrase);
       await saveLocalVault(userId, { envelope: created.envelope, cloudRevision: 0 });
@@ -222,12 +242,12 @@ export function KeysVaultApp() {
       setVaultKey(created.vaultKey);
       setRecoveryKey(created.recoveryKey);
       setPhase("recovery");
-      void pushCloud(created.envelope, 0);
+      await pushCloud(created.envelope, 0);
       form.reset();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Could not create the vault");
     } finally {
-      setBusy(false);
+      finishOperation();
     }
   }
 
@@ -236,7 +256,7 @@ export function KeysVaultApp() {
     if (!envelope) return;
     const form = event.currentTarget;
     setError("");
-    setBusy(true);
+    if (!beginOperation()) return;
     try {
       const data = new FormData(form);
       const unlocked = await unlockVault(envelope, String(data.get("passphrase") ?? ""));
@@ -247,7 +267,7 @@ export function KeysVaultApp() {
     } catch {
       setError("That passphrase cannot unlock this vault");
     } finally {
-      setBusy(false);
+      finishOperation();
     }
   }
 
@@ -256,7 +276,7 @@ export function KeysVaultApp() {
     if (!envelope || !userId) return;
     const form = event.currentTarget;
     setError("");
-    setBusy(true);
+    if (!beginOperation()) return;
     try {
       const data = new FormData(form);
       const newPassphrase = String(data.get("newPassphrase") ?? "");
@@ -275,20 +295,19 @@ export function KeysVaultApp() {
       setRecoverySaved(false);
       setRecoveryReplaced(true);
       setPhase("recovery");
-      void pushCloud(rekeyed.envelope, cloudRevision);
+      await pushCloud(rekeyed.envelope, cloudRevision);
       form.reset();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Recovery failed");
     } finally {
-      setBusy(false);
+      finishOperation();
     }
   }
 
   async function persistItems(items: VaultItem[], nextEnvironments = vaultEnvironments) {
     if (!envelope || !vaultKey || !payload || !userId) return;
-    if (mutation.current || syncState === "saving") throw new Error("Wait for the current save to finish");
+    if (!beginOperation()) throw new Error("Wait for the current vault operation to finish");
     const generation = session.current;
-    mutation.current = true;
     try {
       const nextPayload: VaultPayload = { version: 2, sequence: payload.sequence + 1, items, environments: nextEnvironments };
       const nextEnvelope = await encryptVaultPayload(envelope, vaultKey, nextPayload);
@@ -297,7 +316,7 @@ export function KeysVaultApp() {
       if (generation === session.current) setPayload(nextPayload);
       setEnvelope(nextEnvelope);
       await pushCloud(nextEnvelope, cloudRevision);
-    } finally { mutation.current = false; }
+    } finally { finishOperation(); }
   }
 
   async function saveItem(item: VaultItem) {
@@ -360,7 +379,7 @@ export function KeysVaultApp() {
   }
 
   async function importVault(file: File) {
-    if (!userId) return;
+    if (!userId || !beginOperation()) return;
     setError("");
     try {
       if (file.size > MAX_ENVELOPE_BYTES) throw new Error("Backup is too large");
@@ -376,7 +395,7 @@ export function KeysVaultApp() {
       setPhase("locked");
     } catch {
       setError("This file is not a readable Vaultroom backup");
-    }
+    } finally { finishOperation(); }
   }
 
   if (phase === "loading") {
@@ -401,7 +420,7 @@ export function KeysVaultApp() {
             <button onClick={() => downloadText("vaultroom-recovery-key.txt", recoveryKey)}><Download /> Download</button>
           </div>
           <label className="recoveryCheck"><input type="checkbox" checked={recoverySaved} onChange={(event) => setRecoverySaved(event.target.checked)} /> I stored the recovery key somewhere separate</label>
-          <button className="keysPrimary" disabled={!recoverySaved} onClick={() => { setRecoveryKey(""); setRecoveryReplaced(false); setPhase("unlocked"); }}><ShieldCheck /> Enter my vault</button>
+          <button className="keysPrimary" disabled={!recoverySaved || busy} onClick={() => { setRecoveryKey(""); setRecoveryReplaced(false); setPhase("unlocked"); }}><ShieldCheck /> Enter my vault</button>
         </section>
       </main>
     );
@@ -430,7 +449,7 @@ export function KeysVaultApp() {
         <div className="keysStatus"><i /><span><strong>UNLOCKED</strong><small>Plaintext is in memory</small></span></div>
         <nav>
           <button data-active={filter === "all"} onClick={() => setFilter("all")} title="All secrets"><FileKey2 /><span className="railLabelText">All secrets</span><span className="railCount">{payload?.items.length ?? 0}</span></button>
-          {vaultEnvironments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(environment)} title={environment}><span className={`envDot ${environment}`} /><span className="railLabelText">{environment}</span><span className="railCount">{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
+          {vaultEnvironments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(environment)} title={environment}><span className={`envDot ${environmentStyle(environment)}`} /><span className="railLabelText">{environment}</span><span className="railCount">{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
           <button onClick={() => setManageEnvironments(true)} title="Manage environments"><Plus /><span className="railLabelText">Manage environments</span></button>
         </nav>
         <section className="keysSafety" data-state={syncState} aria-live="polite">{syncState === "saving" ? <LoaderCircle className="syncSpinner" /> : syncState === "offline" || syncState === "conflict" ? <CloudOff /> : <ShieldCheck />}<p><strong>{syncState === "synced" ? "Encrypted backup current" : syncState === "saving" ? "Uploading ciphertext" : syncState === "conflict" ? "Sync conflict" : syncState === "offline" ? "Cloud unavailable" : "Saved on this device"}</strong><small>Sequence {payload?.sequence ?? 0} · cloud rev {cloudRevision}</small></p></section>
@@ -452,7 +471,7 @@ export function KeysVaultApp() {
           {visibleItems.map((item, index) => (
             <article key={item.id} style={{ animationDelay: `${Math.min(index, 10) * 35}ms` }}>
               <span className="keyIdentity"><i>{item.service.slice(0, 2).toUpperCase()}</i><span><strong>{item.service}</strong><small>{item.label}</small></span></span>
-              <span><b className={`envBadge ${item.environment}`}>{item.environment}</b></span>
+              <span><b className={`envBadge ${environmentStyle(item.environment)}`}>{item.environment}</b></span>
               <span className={item.expiresAt && new Date(item.expiresAt) < new Date() ? "expired" : ""}><Clock3 /> {formatDate(item.expiresAt)}</span>
               <span className="secretCell" data-copied={copiedId === item.id}>{item.attachment ? <button className="keyFileDownload" onClick={() => void downloadAttachment(item.attachment!)} aria-label={`Download ${item.attachment.name}`}><Download /><span>{item.attachment.name}</span></button> : <><code>{revealed.has(item.id) ? item.secret : "••••••••••••••••••••"}</code><button aria-label={revealed.has(item.id) ? `Hide ${item.service} secret` : `Reveal ${item.service} secret`} onClick={() => revealed.has(item.id) ? setRevealed((current) => new Set([...current].filter((id) => id !== item.id))) : reveal(item.id)}>{revealed.has(item.id) ? <EyeOff /> : <Eye />}</button><button aria-label={`Copy ${item.service} secret`} onClick={() => void copySecret(item)}>{copiedId === item.id ? <Check /> : <Clipboard />}</button></>}</span>
               <button className="keyMore" aria-label={`Edit ${item.service}`} onClick={() => setEditor(item)}><MoreHorizontal /></button>

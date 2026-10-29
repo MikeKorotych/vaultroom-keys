@@ -143,3 +143,8 @@ remove it from older encrypted backups/history. The browser still holds decrypte
 while unlocked; byte buffers are wiped where possible, but JavaScript strings and browser
 Blob copies cannot be reliably zeroized. This adds no stronger device/XSS guarantees than
 text secrets, and does not constitute an independent security audit.
+
+Client mutations, unlock and import use one synchronous operation guard held through
+local and cloud-completion writes. Lock still discards plaintext immediately; reopening
+waits for the committed envelope so it cannot overwrite a saved edit from stale state.
+Cloud writes time out after 30 seconds; failures retain the encrypted local copy.

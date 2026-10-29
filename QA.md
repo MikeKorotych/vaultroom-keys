@@ -37,3 +37,12 @@ Checked against <https://vaultroom-ruby.vercel.app> and the Railway API:
 9. Delete a disposable room and verify that it disappears from the rail.
 
 The public beta currently uses Clerk development keys. This keeps the hosted demo free, but it also imposes Clerk's development limits and displays its development-mode notice. A production release must use a verified domain, production OAuth credentials and production Clerk keys.
+
+## Encrypted files and environment regression coverage
+
+`pnpm test` includes crypto tests for a 5 MiB binary file, the 10 MiB aggregate
+boundary, tampering, backup recovery and rekey; API tests exercise bounded HTTP
+JSON parsing and sanitized parse errors. React tests use fake authentication,
+crypto and storage to pause writes and verify lock/unlock and backup-import
+serialization, plus custom environment names that collide with CSS class names.
+These React tests do not establish live Clerk or production synchronization coverage.

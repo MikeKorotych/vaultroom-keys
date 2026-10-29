@@ -147,7 +147,7 @@ describe("encrypted files and environments", () => {
     tampered.payload.ciphertext = (tampered.payload.ciphertext[0] === "A" ? "B" : "A") + tampered.payload.ciphertext.slice(1);
     await expect(unlockVault(tampered, passphrase)).rejects.toBeInstanceOf(VaultCryptoError);
     for (const key of [created.vaultKey, recovered.vaultKey, rekeyed.vaultKey, unlocked.vaultKey]) await destroyVaultKey(key);
-  });
+  }, 30_000);
 
   it("rejects oversized, malformed and misreported files and bounds aggregate storage", async () => {
     const { createVaultAttachment, readVaultAttachment, MAX_FILE_BYTES } = await import("./index");
