@@ -6,7 +6,7 @@ import {
 import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
-const MAX_ENVELOPE_BYTES = 2 * 1024 * 1024;
+const MAX_ENVELOPE_BYTES = 20 * 1024 * 1024;
 const HISTORY_LIMIT = 5;
 
 @Injectable()

@@ -120,3 +120,56 @@ describe("vault envelope", () => {
     await destroyVaultKey(created.vaultKey);
   });
 });
+
+describe("encrypted files and environments", () => {
+  it("preserves a maximum-size binary file through backup, recovery and rekey", async () => {
+    const { createVaultAttachment, readVaultAttachment, MAX_FILE_BYTES } = await import("./index");
+    const bytes = new Uint8Array(MAX_FILE_BYTES);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+    const attachment = await createVaultAttachment("fake-private-key.bin", bytes);
+    const created = await createVault(passphrase);
+    const envelope = await encryptVaultPayload(created.envelope, created.vaultKey, {
+      version: 1, items: [{ ...fakeItem(), environment: "Work", attachment }], environments: ["Work"],
+    });
+    const backup = JSON.stringify(envelope);
+    expect(backup).not.toContain(attachment.name);
+    expect(backup).not.toContain(attachment.data.slice(0, 100));
+    expect(backup).not.toContain('"Work"');
+    const recovered = await recoverVault(await validateVaultEnvelope(JSON.parse(backup)), created.recoveryKey);
+    const rekeyed = await rekeyVault(recovered, "new file vault passphrase");
+    const unlocked = await unlockVault(rekeyed.envelope, "new file vault passphrase");
+    expect(unlocked.payload.environments).toEqual(["Work"]);
+    const decoded = await readVaultAttachment(unlocked.payload.items[0]!.attachment!);
+    expect(decoded.length).toBe(bytes.length);
+    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
+    await expect(unlockVault(rekeyed.envelope, passphrase)).rejects.toBeInstanceOf(VaultCryptoError);
+    const tampered = structuredClone(envelope);
+    tampered.payload.ciphertext = (tampered.payload.ciphertext[0] === "A" ? "B" : "A") + tampered.payload.ciphertext.slice(1);
+    await expect(unlockVault(tampered, passphrase)).rejects.toBeInstanceOf(VaultCryptoError);
+    for (const key of [created.vaultKey, recovered.vaultKey, rekeyed.vaultKey, unlocked.vaultKey]) await destroyVaultKey(key);
+  });
+
+  it("rejects oversized, malformed and misreported files and bounds aggregate storage", async () => {
+    const { createVaultAttachment, readVaultAttachment, MAX_FILE_BYTES } = await import("./index");
+    await expect(createVaultAttachment("large", new Uint8Array(MAX_FILE_BYTES + 1))).rejects.toThrow("5 MiB");
+    const empty = await createVaultAttachment("../../fake\u202ekey", new Uint8Array());
+    expect(empty.name).not.toMatch(/[\/\u202e]/);
+    expect(await readVaultAttachment(empty)).toHaveLength(0);
+    await expect(readVaultAttachment({ ...empty, data: "!" })).rejects.toThrow();
+    await expect(readVaultAttachment({ ...empty, size: 1 })).rejects.toThrow();
+    const full = await createVaultAttachment("fake", new Uint8Array(MAX_FILE_BYTES));
+    const created = await createVault(passphrase);
+    const items = [0, 1, 2].map((id) => ({ ...fakeItem(), id: String(id), attachment: full }));
+    await expect(encryptVaultPayload(created.envelope, created.vaultKey, { version: 1, items })).rejects.toThrow("10 MiB");
+    await expect(encryptVaultPayload(created.envelope, created.vaultKey, { version: 1, items: items.slice(0, 2) })).resolves.toBeDefined();
+    await destroyVaultKey(created.vaultKey);
+  });
+
+  it("validates environment metadata and rejects orphaned entries", async () => {
+    const created = await createVault(passphrase);
+    for (const environments of [[], ["all"], ["Work", "Work"], ["Work"]]) {
+      await expect(encryptVaultPayload(created.envelope, created.vaultKey, { version: 1, environments, items: [fakeItem()] })).rejects.toThrow();
+    }
+    await destroyVaultKey(created.vaultKey);
+  });
+});

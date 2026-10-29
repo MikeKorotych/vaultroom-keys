@@ -10,7 +10,17 @@ const RECOVERY_WRAP_CONTEXT = "vaultroom-keys:v1:recovery-wrap";
 const PAYLOAD_CONTEXT = "vaultroom-keys:v1:payload";
 const RECOVERY_PREFIX = "vrk1_";
 
-export type VaultEnvironment = "development" | "staging" | "production" | "personal";
+export type VaultEnvironment = string;
+
+export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_VAULT_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_ENVELOPE_BYTES = 20 * 1024 * 1024;
+
+export interface VaultAttachment {
+  name: string;
+  size: number;
+  data: string; // URL-safe base64, inside the authenticated encrypted payload only.
+}
 
 export interface VaultItem {
   id: string;
@@ -18,6 +28,7 @@ export interface VaultItem {
   label: string;
   environment: VaultEnvironment;
   secret: string;
+  attachment?: VaultAttachment;
   notes: string;
   expiresAt: string | null;
   createdAt: string;
@@ -25,9 +36,10 @@ export interface VaultItem {
 }
 
 export interface VaultPayload {
-  version: 1;
+  version: 1 | 2;
   sequence: number;
   items: VaultItem[];
+  environments?: string[];
 }
 
 export interface EncryptedBox {
@@ -136,6 +148,9 @@ function validateBox(value: unknown): asserts value is EncryptedBox {
 
 function validateEnvelope(value: unknown): asserts value is VaultEnvelope {
   if (!value || typeof value !== "object") throw new VaultCryptoError("Invalid vault envelope");
+  if (new TextEncoder().encode(JSON.stringify(value)).length > MAX_ENVELOPE_BYTES) {
+    throw new VaultCryptoError("Encrypted vault is too large");
+  }
   const envelope = value as Partial<VaultEnvelope>;
   if (envelope.format !== FORMAT || envelope.version !== VERSION) {
     throw new VaultCryptoError("Unsupported vault format");
@@ -175,9 +190,59 @@ function validateEnvelope(value: unknown): asserts value is VaultEnvelope {
 function validatePayload(value: unknown): asserts value is VaultPayload {
   if (!value || typeof value !== "object") throw new VaultCryptoError("Invalid vault payload");
   const payload = value as Partial<VaultPayload>;
-  if (payload.version !== 1 || !Number.isSafeInteger(payload.sequence) || !Array.isArray(payload.items)) {
+  if ((payload.version !== 1 && payload.version !== 2) || !Number.isSafeInteger(payload.sequence) || !Array.isArray(payload.items)) {
     throw new VaultCryptoError("Invalid vault payload");
   }
+  if (payload.environments !== undefined &&
+      (!Array.isArray(payload.environments) || payload.environments.length < 1 || payload.environments.length > 50 ||
+       payload.environments.some((name) => typeof name !== "string" || !name.trim() || name !== name.trim() || name.length > 60 || name === "all") ||
+       new Set(payload.environments).size !== payload.environments.length)) {
+    throw new VaultCryptoError("Invalid environments");
+  }
+  let total = 0;
+  for (const item of payload.items) {
+    if (!item || typeof item !== "object") throw new VaultCryptoError("Invalid vault item");
+    if (payload.environments && !payload.environments.includes(item.environment)) throw new VaultCryptoError("Unknown environment");
+    if (item.attachment !== undefined) {
+      validateAttachment(item.attachment);
+      total += item.attachment.size;
+      if (total > MAX_VAULT_FILE_BYTES) throw new VaultCryptoError("Files exceed the 10 MiB vault limit");
+    }
+  }
+}
+
+/** No file type is rendered or executed. Names are download basenames only. */
+export function safeAttachmentName(name: string) {
+  return name.replace(/[\\/\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "_").slice(0, 180).replace(/^\.+$/, "file") || "file";
+}
+
+function validateAttachment(file: VaultAttachment) {
+  if (!file || typeof file.name !== "string" || file.name !== safeAttachmentName(file.name) ||
+      !Number.isSafeInteger(file.size) || file.size < 0 || file.size > MAX_FILE_BYTES ||
+      typeof file.data !== "string" || file.data.length > Math.ceil(MAX_FILE_BYTES * 4 / 3)) {
+    throw new VaultCryptoError("Invalid file (maximum 5 MiB)");
+  }
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = decode(file.data);
+    if (bytes.length !== file.size) throw new VaultCryptoError("Invalid file size");
+  } catch {
+    throw new VaultCryptoError("Invalid file encoding or size");
+  } finally {
+    if (bytes) sodium.memzero(bytes);
+  }
+}
+
+export async function createVaultAttachment(name: string, bytes: Uint8Array): Promise<VaultAttachment> {
+  if (bytes.length > MAX_FILE_BYTES) throw new VaultCryptoError("File exceeds 5 MiB");
+  await sodium.ready;
+  return { name: safeAttachmentName(name), size: bytes.length, data: encode(bytes) };
+}
+
+export async function readVaultAttachment(file: VaultAttachment): Promise<Uint8Array> {
+  await sodium.ready;
+  validateAttachment(file);
+  return decode(file.data);
 }
 
 function derivePassphraseKey(passphrase: string, kdf: VaultKdf) {
@@ -260,16 +325,28 @@ export async function validateVaultEnvelope(value: unknown): Promise<VaultEnvelo
   return value;
 }
 
+function openPayload(envelope: VaultEnvelope, vaultKey: Uint8Array): VaultPayload {
+  let plaintext: Uint8Array | undefined;
+  try {
+    plaintext = decryptBox(envelope.payload, vaultKey, PAYLOAD_CONTEXT);
+    const payload: unknown = JSON.parse(sodium.to_string(plaintext));
+    validatePayload(payload);
+    return payload;
+  } catch (error) {
+    sodium.memzero(vaultKey);
+    throw error;
+  } finally {
+    if (plaintext) sodium.memzero(plaintext);
+  }
+}
+
 export async function unlockVault(envelope: VaultEnvelope, passphrase: string): Promise<UnlockedVault> {
   await sodium.ready;
   validateEnvelope(envelope);
   const passphraseKey = derivePassphraseKey(passphrase, envelope.kdf);
   try {
     const vaultKey = decryptBox(envelope.passphraseWrappedKey, passphraseKey, kdfAad(envelope.kdf));
-    const payload = JSON.parse(
-      sodium.to_string(decryptBox(envelope.payload, vaultKey, PAYLOAD_CONTEXT)),
-    ) as unknown;
-    validatePayload(payload);
+    const payload = openPayload(envelope, vaultKey);
     return { envelope, payload, vaultKey };
   } catch (error) {
     if (error instanceof VaultCryptoError) throw error;
@@ -285,10 +362,7 @@ export async function recoverVault(envelope: VaultEnvelope, recoveryKey: string)
   const recoveryBytes = parseRecoveryKey(recoveryKey);
   try {
     const vaultKey = decryptBox(envelope.recoveryWrappedKey, recoveryBytes, RECOVERY_WRAP_CONTEXT);
-    const payload = JSON.parse(
-      sodium.to_string(decryptBox(envelope.payload, vaultKey, PAYLOAD_CONTEXT)),
-    ) as unknown;
-    validatePayload(payload);
+    const payload = openPayload(envelope, vaultKey);
     return { envelope, payload, vaultKey };
   } catch (error) {
     if (error instanceof VaultCryptoError) throw error;
@@ -309,16 +383,19 @@ export async function encryptVaultPayload(
     throw new VaultCryptoError("Invalid vault key");
   }
   const nextPayload: VaultPayload = {
-    version: 1,
+    version: 2,
     sequence: payload.sequence ?? 0,
     items: payload.items,
+    ...(payload.environments ? { environments: payload.environments } : {}),
   };
   validatePayload(nextPayload);
-  return {
+  const result: VaultEnvelope = {
     ...envelope,
     payload: encryptBox(JSON.stringify(nextPayload), vaultKey, PAYLOAD_CONTEXT),
     updatedAt: new Date().toISOString(),
   };
+  validateEnvelope(result);
+  return result;
 }
 
 /**

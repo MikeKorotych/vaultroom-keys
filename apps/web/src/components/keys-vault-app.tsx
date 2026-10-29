@@ -3,6 +3,11 @@
 import { useAuth, UserButton } from "@clerk/nextjs";
 import {
   createVault,
+  createVaultAttachment,
+  readVaultAttachment,
+  MAX_FILE_BYTES,
+  MAX_ENVELOPE_BYTES,
+  type VaultAttachment,
   destroyVaultKey,
   encryptVaultPayload,
   recoverVault,
@@ -86,6 +91,10 @@ export function KeysVaultApp() {
   const [cloudRevision, setCloudRevision] = useState(0);
   const [syncState, setSyncState] = useState<SyncState>("loading");
   const [railCompact, setRailCompact] = useState(false);
+  const session = useRef(0);
+  const mutation = useRef(false);
+  const [manageEnvironments, setManageEnvironments] = useState(false);
+  const vaultEnvironments = payload?.environments ?? environments;
   const importRef = useRef<HTMLInputElement>(null);
   // After a rekey the server must drop its older envelopes; kept until a push succeeds.
   const historyResetPending = useRef(false);
@@ -158,6 +167,8 @@ export function KeysVaultApp() {
   }, [filter, payload, query]);
 
   async function lock() {
+    session.current++;
+    setManageEnvironments(false);
     if (vaultKey) await destroyVaultKey(vaultKey);
     setVaultKey(null);
     setPayload(null);
@@ -273,14 +284,20 @@ export function KeysVaultApp() {
     }
   }
 
-  async function persistItems(items: VaultItem[]) {
+  async function persistItems(items: VaultItem[], nextEnvironments = vaultEnvironments) {
     if (!envelope || !vaultKey || !payload || !userId) return;
-    const nextPayload: VaultPayload = { version: 1, sequence: payload.sequence + 1, items };
-    const nextEnvelope = await encryptVaultPayload(envelope, vaultKey, nextPayload);
-    await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision, resetHistoryPending: historyResetPending.current });
-    setPayload(nextPayload);
-    setEnvelope(nextEnvelope);
-    void pushCloud(nextEnvelope, cloudRevision);
+    if (mutation.current || syncState === "saving") throw new Error("Wait for the current save to finish");
+    const generation = session.current;
+    mutation.current = true;
+    try {
+      const nextPayload: VaultPayload = { version: 2, sequence: payload.sequence + 1, items, environments: nextEnvironments };
+      const nextEnvelope = await encryptVaultPayload(envelope, vaultKey, nextPayload);
+      if (generation !== session.current) throw new Error("Vault locked; save cancelled");
+      await saveLocalVault(userId, { envelope: nextEnvelope, cloudRevision, resetHistoryPending: historyResetPending.current });
+      if (generation === session.current) setPayload(nextPayload);
+      setEnvelope(nextEnvelope);
+      await pushCloud(nextEnvelope, cloudRevision);
+    } finally { mutation.current = false; }
   }
 
   async function saveItem(item: VaultItem) {
@@ -317,11 +334,27 @@ export function KeysVaultApp() {
     }, 30_000);
   }
 
+  async function downloadAttachment(file: VaultAttachment) {
+    const generation = session.current;
+    try {
+      const bytes = await readVaultAttachment(file);
+      try {
+        if (generation !== session.current) return;
+        const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }));
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = file.name;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } finally { bytes.fill(0); }
+    } catch { setError("Could not download this file"); }
+  }
+
   function exportVault() {
     if (!envelope) return;
     downloadText(
       `vaultroom-keys-${new Date().toISOString().slice(0, 10)}.vaultroom`,
-      JSON.stringify(envelope, null, 2),
+      JSON.stringify(envelope),
       "application/vnd.vaultroom.keys+json",
     );
   }
@@ -330,10 +363,13 @@ export function KeysVaultApp() {
     if (!userId) return;
     setError("");
     try {
-      if (file.size > 2 * 1024 * 1024) throw new Error("Backup is too large");
+      if (file.size > MAX_ENVELOPE_BYTES) throw new Error("Backup is too large");
+      session.current++;
       const imported = await validateVaultEnvelope(JSON.parse(await file.text()));
       await saveLocalVault(userId, { envelope: imported, cloudRevision, resetHistoryPending: historyResetPending.current });
       if (vaultKey) await destroyVaultKey(vaultKey);
+      setEditor(null);
+      setManageEnvironments(false);
       setEnvelope(imported);
       setVaultKey(null);
       setPayload(null);
@@ -394,7 +430,8 @@ export function KeysVaultApp() {
         <div className="keysStatus"><i /><span><strong>UNLOCKED</strong><small>Plaintext is in memory</small></span></div>
         <nav>
           <button data-active={filter === "all"} onClick={() => setFilter("all")} title="All secrets"><FileKey2 /><span className="railLabelText">All secrets</span><span className="railCount">{payload?.items.length ?? 0}</span></button>
-          {environments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(environment)} title={environment}><span className={`envDot ${environment}`} /><span className="railLabelText">{environment}</span><span className="railCount">{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
+          {vaultEnvironments.map((environment) => <button key={environment} data-active={filter === environment} onClick={() => setFilter(environment)} title={environment}><span className={`envDot ${environment}`} /><span className="railLabelText">{environment}</span><span className="railCount">{payload?.items.filter((item) => item.environment === environment).length ?? 0}</span></button>)}
+          <button onClick={() => setManageEnvironments(true)} title="Manage environments"><Plus /><span className="railLabelText">Manage environments</span></button>
         </nav>
         <section className="keysSafety" data-state={syncState} aria-live="polite">{syncState === "saving" ? <LoaderCircle className="syncSpinner" /> : syncState === "offline" || syncState === "conflict" ? <CloudOff /> : <ShieldCheck />}<p><strong>{syncState === "synced" ? "Encrypted backup current" : syncState === "saving" ? "Uploading ciphertext" : syncState === "conflict" ? "Sync conflict" : syncState === "offline" ? "Cloud unavailable" : "Saved on this device"}</strong><small>Sequence {payload?.sequence ?? 0} · cloud rev {cloudRevision}</small></p></section>
         <SecurityExplainer placement="rail" />
@@ -408,7 +445,7 @@ export function KeysVaultApp() {
           <input ref={importRef} hidden type="file" accept=".vaultroom,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); event.target.value = ""; }} />
         </header>
 
-        <div className="keysHero"><p className="keysKicker">LOCAL DECRYPTED VIEW</p><section className="keysHeroTitle"><h1>Secrets</h1><small>{filter === "all" ? "ALL ENVIRONMENTS" : filter.toUpperCase()}</small></section></div>
+        <div className="keysHero"><button className="keysMobileEnvironments" onClick={() => setManageEnvironments(true)}>Manage environments</button><p className="keysKicker">LOCAL DECRYPTED VIEW</p><section className="keysHeroTitle"><h1>Secrets</h1><small>{filter === "all" ? "ALL ENVIRONMENTS" : filter.toUpperCase()}</small></section></div>
 
         <div className="keysList">
           <header><span>Service / label</span><span>Environment</span><span>Expiry</span><span>Secret</span><span /></header>
@@ -417,7 +454,7 @@ export function KeysVaultApp() {
               <span className="keyIdentity"><i>{item.service.slice(0, 2).toUpperCase()}</i><span><strong>{item.service}</strong><small>{item.label}</small></span></span>
               <span><b className={`envBadge ${item.environment}`}>{item.environment}</b></span>
               <span className={item.expiresAt && new Date(item.expiresAt) < new Date() ? "expired" : ""}><Clock3 /> {formatDate(item.expiresAt)}</span>
-              <span className="secretCell" data-copied={copiedId === item.id}><code>{revealed.has(item.id) ? item.secret : "••••••••••••••••••••"}</code><button aria-label={revealed.has(item.id) ? `Hide ${item.service} secret` : `Reveal ${item.service} secret`} onClick={() => revealed.has(item.id) ? setRevealed((current) => new Set([...current].filter((id) => id !== item.id))) : reveal(item.id)}>{revealed.has(item.id) ? <EyeOff /> : <Eye />}</button><button aria-label={`Copy ${item.service} secret`} onClick={() => void copySecret(item)}>{copiedId === item.id ? <Check /> : <Clipboard />}</button></span>
+              <span className="secretCell" data-copied={copiedId === item.id}>{item.attachment ? <button className="keyFileDownload" onClick={() => void downloadAttachment(item.attachment!)} aria-label={`Download ${item.attachment.name}`}><Download /><span>{item.attachment.name}</span></button> : <><code>{revealed.has(item.id) ? item.secret : "••••••••••••••••••••"}</code><button aria-label={revealed.has(item.id) ? `Hide ${item.service} secret` : `Reveal ${item.service} secret`} onClick={() => revealed.has(item.id) ? setRevealed((current) => new Set([...current].filter((id) => id !== item.id))) : reveal(item.id)}>{revealed.has(item.id) ? <EyeOff /> : <Eye />}</button><button aria-label={`Copy ${item.service} secret`} onClick={() => void copySecret(item)}>{copiedId === item.id ? <Check /> : <Clipboard />}</button></>}</span>
               <button className="keyMore" aria-label={`Edit ${item.service}`} onClick={() => setEditor(item)}><MoreHorizontal /></button>
             </article>
           ))}
@@ -427,7 +464,8 @@ export function KeysVaultApp() {
         {copiedId && <div className="keysToast" role="status"><Check /> Copied. Clipboard clears in 30 seconds.</div>}
       </section>
 
-      {editor && <ItemEditor item={editor === "new" ? null : editor} onClose={() => setEditor(null)} onSave={saveItem} onDelete={deleteItem} />}
+      {manageEnvironments && <EnvironmentEditor environments={vaultEnvironments} items={payload?.items ?? []} onClose={() => setManageEnvironments(false)} onSave={async (names, items) => { await persistItems(items, names); setFilter("all"); }} />}
+      {editor && <ItemEditor environments={vaultEnvironments} item={editor === "new" ? null : editor} onClose={() => setEditor(null)} onSave={saveItem} onDelete={deleteItem} />}
     </main>
   );
 }
@@ -441,30 +479,92 @@ function LockedScreen({ envelope, busy, error, onUnlock, onRecover, onImport, im
   return <main className="keysGate lockedGate"><header className="gateBrand"><KeyRound /> VAULTROOM KEYS</header><section className="lockCard"><div className="lockGlyph"><Lock /></div><p className="keysKicker">VAULT LOCKED</p><h1>{recoveryMode ? "Recover access." : "Nothing readable here."}</h1><p>Encrypted on {formatDate(envelope.createdAt)}. Last changed {formatDate(envelope.updatedAt)}.</p>{!recoveryMode ? <form onSubmit={onUnlock}><label>Master passphrase<input name="passphrase" type="password" required autoFocus autoComplete="current-password" /></label>{error && <small>{error}</small>}<button className="keysPrimary" disabled={busy}><Fingerprint /> {busy ? "Checking encrypted vault…" : "Unlock on this device"}</button></form> : <form onSubmit={onRecover}><label>Recovery key<textarea name="recoveryKey" required autoFocus /></label><label>New master passphrase<input name="newPassphrase" type="password" required minLength={12} /></label><label>Repeat passphrase<input name="confirmation" type="password" required minLength={12} /></label>{error && <small>{error}</small>}<button className="keysPrimary" disabled={busy}><ShieldCheck /> Recover and rewrap key</button></form>}<div className="lockedLinks"><button onClick={() => setRecoveryMode(!recoveryMode)}>{recoveryMode ? "Use master passphrase" : "Use recovery key"}</button><button onClick={onImport}>Replace with backup</button></div><input ref={importRef} hidden type="file" accept=".vaultroom,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onFile(file); }} /></section><footer>SERVER-SIDE PASSWORD RESET DOES NOT EXIST</footer></main>;
 }
 
-function ItemEditor({ item, onClose, onSave, onDelete }: { item: VaultItem | null; onClose: () => void; onSave: (item: VaultItem) => Promise<void>; onDelete: (item: VaultItem) => Promise<void> }) {
+function ItemEditor({ item, onClose, onSave, onDelete, environments }: { environments: string[]; item: VaultItem | null; onClose: () => void; onSave: (item: VaultItem) => Promise<void>; onDelete: (item: VaultItem) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [error, setError] = useState("");
+  const [attachment, setAttachment] = useState(item?.attachment);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+
+  async function selectFile(file?: File) {
+    if (!file) return;
+    setError("");
+    if (file.size > MAX_FILE_BYTES) { setError("File exceeds 5 MiB"); return; }
+    setSaving(true);
+    let bytes: Uint8Array | undefined;
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer());
+      const next = await createVaultAttachment(file.name, bytes);
+      if (active.current) setAttachment(next);
+    } catch { if (active.current) setError("Could not read this file"); }
+    finally { bytes?.fill(0); if (active.current) setSaving(false); }
+  }
 
   function requestClose() {
-    if (closing) return;
+    if (closing || saving) return;
     setClosing(true);
     window.setTimeout(onClose, 150);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
     setSaving(true);
     const data = new FormData(event.currentTarget);
     const now = new Date().toISOString();
-    await onSave({ id: item?.id ?? crypto.randomUUID(), service: String(data.get("service")), label: String(data.get("label")), environment: String(data.get("environment")) as VaultEnvironment, secret: String(data.get("secret")), notes: String(data.get("notes")), expiresAt: String(data.get("expiresAt") || "") || null, createdAt: item?.createdAt ?? now, updatedAt: now });
-    setSaving(false);
-    requestClose();
+    try {
+    await onSave({ attachment, id: item?.id ?? crypto.randomUUID(), service: String(data.get("service")), label: String(data.get("label")), environment: String(data.get("environment")) as VaultEnvironment, secret: attachment ? "" : String(data.get("secret") ?? ""), notes: String(data.get("notes")), expiresAt: String(data.get("expiresAt") || "") || null, createdAt: item?.createdAt ?? now, updatedAt: now });
+    onClose();
+    } catch (error) { setError(error instanceof Error ? error.message : "Save failed"); }
+    finally { setSaving(false); }
   }
   async function remove() {
     if (!item) return;
-    await onDelete(item);
-    requestClose();
+    setSaving(true);
+    try { await onDelete(item); onClose(); }
+    catch (error) { setError(error instanceof Error ? error.message : "Delete failed"); }
+    finally { setSaving(false); }
   }
 
-  return <div className="keyModalBackdrop" data-closing={closing} onMouseDown={requestClose}><form className="keyModal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="keyModalClose" aria-label="Close secret editor" onClick={requestClose}><X /></button><p className="keysKicker">{item ? "EDIT SECRET" : "NEW SECRET"}</p><h2>{item ? item.service : "Add a key."}</h2><div className="keyFormGrid"><label>Service<input name="service" defaultValue={item?.service} required autoFocus placeholder="OpenRouter" /></label><label>Label<input name="label" defaultValue={item?.label} required placeholder="Personal account" /></label><label>Environment<select name="environment" defaultValue={item?.environment ?? "development"}>{environments.map((environment) => <option key={environment}>{environment}</option>)}</select></label><label>Expires<input name="expiresAt" type="date" defaultValue={item?.expiresAt?.slice(0, 10)} /></label><label className="keyFormFull">Secret value<textarea name="secret" defaultValue={item?.secret} required spellCheck={false} /></label><label className="keyFormFull">Notes<textarea name="notes" defaultValue={item?.notes} /></label></div><footer>{item ? <button type="button" className="keyDelete" onClick={() => void remove()}><Trash2 /> Delete</button> : <span />}<div><button type="button" onClick={requestClose}>Cancel</button><button className="keysPrimary" disabled={saving}><ShieldCheck /> {saving ? "Encrypting…" : "Encrypt and save"}</button></div></footer></form></div>;
+  return <div className="keyModalBackdrop" data-closing={closing} onMouseDown={requestClose}><form className="keyModal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="keyModalClose" aria-label="Close secret editor" onClick={requestClose}><X /></button><p className="keysKicker">{item ? "EDIT SECRET" : "NEW SECRET"}</p><h2>{item ? item.service : "Add a key."}</h2><div className="keyFormGrid"><label>Service<input name="service" defaultValue={item?.service} required autoFocus placeholder="OpenRouter" /></label><label>Label<input name="label" defaultValue={item?.label} required placeholder="Personal account" /></label><label>Environment<select name="environment" defaultValue={item?.environment ?? environments[0]}>{environments.map((environment) => <option key={environment}>{environment}</option>)}</select></label><label>Expires<input name="expiresAt" type="date" defaultValue={item?.expiresAt?.slice(0, 10)} /></label><label className="keyFormFull">File (up to 5 MiB; 10 MiB total)<input type="file" disabled={saving} onChange={(event) => { void selectFile(event.target.files?.[0]); event.target.value = ""; }} /></label>{attachment ? <div className="keyFormFull"><p>{attachment.name} · {attachment.size.toLocaleString()} bytes</p><p>Encrypted with your vault. Downloads create an unencrypted copy on your device.</p><button type="button" disabled={saving} onClick={() => setAttachment(undefined)}>Remove file</button></div> : <label className="keyFormFull">Secret value<textarea name="secret" defaultValue={item?.secret} required spellCheck={false} /></label>}<label className="keyFormFull">Notes<textarea name="notes" defaultValue={item?.notes} /></label></div>{error && <p role="alert">{error}</p>}<footer>{item ? <button type="button" className="keyDelete" disabled={saving} onClick={() => void remove()}><Trash2 /> Delete</button> : <span />}<div><button type="button" onClick={requestClose}>Cancel</button><button className="keysPrimary" disabled={saving}><ShieldCheck /> {saving ? "Encrypting…" : "Encrypt and save"}</button></div></footer></form></div>;
+}
+
+function EnvironmentEditor({ environments, items, onSave, onClose }: {
+  environments: string[]; items: VaultItem[];
+  onSave: (names: string[], items: VaultItem[]) => Promise<void>; onClose: () => void;
+}) {
+  const [selected, setSelected] = useState(environments[0]);
+  const [name, setName] = useState("");
+  const [destination, setDestination] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function change(action: "add" | "rename" | "delete") {
+    setError("");
+    const nextName = name.trim();
+    if (action !== "delete" && (!nextName || nextName === "all" || nextName.length > 60 || environments.includes(nextName))) {
+      setError("Use a unique name of 1–60 characters (other than ‘all’)."); return;
+    }
+    if (action === "add" && environments.length >= 50) { setError("Maximum 50 environments."); return; }
+    if (action === "delete" && environments.length === 1) { setError("Keep at least one environment."); return; }
+    if (action === "delete" && items.some((item) => item.environment === selected) && (!destination || destination === selected)) {
+      setError("Choose where to move the existing secrets first."); return;
+    }
+    const names = action === "add" ? [...environments, nextName] : action === "rename" ? environments.map((value) => value === selected ? nextName : value) : environments.filter((value) => value !== selected);
+    const nextItems = action === "add" ? items : items.map((item) => item.environment === selected ? { ...item, environment: action === "rename" ? nextName : destination, updatedAt: new Date().toISOString() } : item);
+    setSaving(true);
+    try { await onSave(names, nextItems); onClose(); }
+    catch (error) { setError(error instanceof Error ? error.message : "Could not save environments"); }
+    finally { setSaving(false); }
+  }
+  return <div className="keyModalBackdrop"><section className="keyModal" role="dialog" aria-modal="true" aria-labelledby="environment-title">
+    <button type="button" className="keyModalClose" disabled={saving} onClick={onClose} aria-label="Close environments"><X /></button>
+    <p className="keysKicker">ENCRYPTED VAULT SETTINGS</p><h2 id="environment-title">Environments</h2>
+    <div className="keyFormGrid"><label className="keyFormFull">Existing environment<select value={selected} onChange={(event) => { setSelected(event.target.value); setDestination(""); }}>{environments.map((value) => <option key={value}>{value}</option>)}</select></label>
+    <label className="keyFormFull">New name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Work" /></label>
+    <label className="keyFormFull">Move secrets here when deleting<select value={destination} onChange={(event) => setDestination(event.target.value)}><option value="">Choose environment</option>{environments.filter((value) => value !== selected).map((value) => <option key={value}>{value}</option>)}</select></label></div>
+    <p>Deleting an environment keeps its secrets and files. Names are encrypted with your vault.</p>
+    {error && <p role="alert">{error}</p>}
+    <footer><button className="keyDelete" disabled={saving} onClick={() => void change("delete")}><Trash2 /> Delete</button><div><button disabled={saving} onClick={() => void change("rename")}>Rename</button><button className="keysPrimary" disabled={saving} onClick={() => void change("add")}><Plus /> Add environment</button></div></footer>
+  </section></div>;
 }
