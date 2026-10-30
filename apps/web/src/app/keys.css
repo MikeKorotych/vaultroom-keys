@@ -124,7 +124,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .securityVisibility{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--key-line)}.securityVisibility section{padding:18px}.securityVisibility section+section{border-left:1px solid var(--key-line)}.securityVisibility span{display:flex;align-items:center;gap:8px;font:800 9px ui-monospace,monospace;letter-spacing:.09em}.securityVisibility span svg{width:15px;color:var(--key-amber)}.securityVisibility section+section span svg{color:var(--key-acid)}.securityVisibility ul{margin:13px 0 0;padding-left:18px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px 22px;color:#929292;font-size:9px}
 .securityModal>footer{margin-top:18px;padding:16px;display:grid;grid-template-columns:24px 1fr;gap:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.045)}.securityModal>footer svg{width:17px;color:var(--key-amber)}.securityModal>footer p{margin:0;color:#a5a5a1;font-size:9px;line-height:1.65}.securityModal>footer strong{color:#e4e0d6}
 
-@media(hover:hover) and (pointer:fine){.signInPrimary:hover,.keysPrimary:not(:disabled):hover,.keysAdd:hover,.keysEmpty button:hover{transform:translateY(-2px);box-shadow:0 12px 36px rgba(255,255,255,.13)}.signInPrimary:active,.keysPrimary:not(:disabled):active,.keysAdd:active,.keysEmpty button:active{transform:translateY(0) scale(.98)}.securityExplainTrigger:hover{color:#141414;background:rgba(255,255,255,.42)}.securityExplainTrigger.landing:hover{color:#fff;border-color:#696969;background:#161616}.securityModalClose:hover{color:#fff;border-color:#717171}.keysRail nav button:hover,.keysList>article:hover{transform:translateX(2px)}}
+@media(hover:hover) and (pointer:fine){.signInPrimary:hover,.keysPrimary:not(:disabled):hover,.keysAdd:hover,.keysEmpty button:hover{transform:translateY(-2px);box-shadow:0 12px 36px rgba(255,255,255,.13)}.signInPrimary:active,.keysPrimary:not(:disabled):active,.keysAdd:active,.keysEmpty button:active{transform:translateY(0) scale(.98)}.securityExplainTrigger:hover{color:#141414;background:rgba(255,255,255,.42)}.securityExplainTrigger.landing:hover{color:#fff;border-color:#696969;background:#161616}.securityModalClose:hover{color:#fff;border-color:#717171}.keysList>article:hover{transform:translateX(2px)}}
 
 @keyframes gridDrift{from{transform:translate3d(-21px,-21px,0)}to{transform:translate3d(21px,21px,0)}}
 @keyframes orbBreathe{from{opacity:.55;transform:translate3d(0,-1.5%,0) scale(.97)}to{opacity:1;transform:translate3d(-2%,1.5%,0) scale(1.03)}}
@@ -159,7 +159,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .envDot{background:#888}
 
 .keysMobileEnvironments{display:none}
-@media(min-width:721px){.keysRail nav{min-height:0;overflow-y:auto}}
+@media(min-width:721px){.keysRail nav{min-height:0;overflow-x:hidden;overflow-y:auto}}
 @media(max-width:720px){.keysMobileEnvironments{display:block;margin-bottom:16px;padding:8px;border:1px solid var(--key-line);background:#111;color:var(--key-cream)}}
 
 .secretCell .keyFileDownload{width:auto;min-width:0;display:flex;gap:8px;padding:0 8px;color:var(--key-cream)}
